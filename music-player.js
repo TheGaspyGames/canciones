@@ -38,10 +38,17 @@ async function loadSongs() {
         const data = await response.json();
         console.log('Datos cargados:', data);
         songs = data.songs;
-        console.log('Canciones guardadas:', songs.length);
-        initializeMusicPlayer();
-        updatePagination();
-        generateMusicCards(); // Asegurarnos de que se generan las tarjetas
+    console.log('Canciones guardadas:', songs.length);
+    // Inicializar partes del reproductor ahora que `songs` está cargado
+    updatePagination();
+    generateMusicCards(); // Asegurarnos de que se generan las tarjetas
+    // Inicializar la playlist y cargar la canción actual solo si hay canciones
+    if (songs.length > 0) {
+      initializePlaylist();
+      loadCurrentSong();
+    } else {
+      console.warn('No hay canciones en la lista después de cargar songs.json');
+    }
     } catch (error) {
         console.error('Error cargando las canciones:', error);
         document.querySelector('.music-grid').innerHTML = `
@@ -243,6 +250,5 @@ music.addEventListener('ended', () => {
   nextSong();
 });
 
-// Inicializar el reproductor
-initializePlaylist();
-loadCurrentSong();
+// Inicializar el reproductor: ya se hace tras cargar `songs` en loadSongs().
+// (Evitar inicializar aquí porque `songs` todavía podría estar vacío.)
