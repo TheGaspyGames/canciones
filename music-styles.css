@@ -5,6 +5,9 @@
   --muted: #9aa6b2;
   --accent: #6ee7b7;
   --text: #e6eef6;
+  --nav-bg: rgba(11, 18, 32, 0.8);
+  --nav-hover: rgba(255, 255, 255, 0.1);
+  --active: #6ee7b7;
 }
 
 /* Estilos base */
@@ -375,8 +378,67 @@ select {
   filter: brightness(1.1);
 }
 
-/* Menú de hamburguesa */
-/* Eliminados los estilos de navegación */
+/* Menú principal */
+.main-menu {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  background: var(--nav-bg);
+  padding: 10px;
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 1000;
+}
+
+.menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.menu-icon {
+  font-size: 1.2em;
+}
+
+.menu-item:hover {
+  background: var(--nav-hover);
+}
+
+.menu-item.active {
+  background: var(--active);
+  color: var(--bg);
+}
+
+@media (max-width: 768px) {
+  .main-menu {
+    top: auto;
+    bottom: 90px; /* Ajustado para estar encima del reproductor */
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px;
+  }
+
+  .menu-items {
+    flex-direction: row;
+  }
+
+  .menu-item {
+    padding: 8px 12px;
+    font-size: 0.9em;
+  }
+}
 
 h2 {
   margin: 30px 0 15px;
