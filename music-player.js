@@ -32,16 +32,22 @@ const songsPerPage = 24; // Número de canciones por página
 // Cargar canciones desde el JSON
 async function loadSongs() {
     try {
+        console.log('Intentando cargar songs.json...');
         const response = await fetch('songs.json');
+        console.log('Respuesta recibida:', response);
         const data = await response.json();
+        console.log('Datos cargados:', data);
         songs = data.songs;
+        console.log('Canciones guardadas:', songs.length);
         initializeMusicPlayer();
         updatePagination();
+        generateMusicCards(); // Asegurarnos de que se generan las tarjetas
     } catch (error) {
         console.error('Error cargando las canciones:', error);
         document.querySelector('.music-grid').innerHTML = `
             <div class="error-message">
-                Error cargando las canciones. Por favor, intenta recargar la página.
+                Error cargando las canciones. Por favor, intenta recargar la página.<br>
+                Detalles del error: ${error.message}
             </div>
         `;
     }
@@ -85,10 +91,22 @@ function updatePagination() {
 
 // Generar tarjetas de música
 function generateMusicCards() {
+    console.log('Generando tarjetas de música...');
     const musicGrid = document.querySelector('.music-grid');
+    if (!musicGrid) {
+        console.error('No se encontró el elemento .music-grid');
+        return;
+    }
+    
     const displayedSongs = updatePagination();
+    console.log('Canciones a mostrar:', displayedSongs.length);
     
     musicGrid.innerHTML = '';
+    if (displayedSongs.length === 0) {
+        musicGrid.innerHTML = '<div class="error-message">No hay canciones para mostrar</div>';
+        return;
+    }
+    
     displayedSongs.forEach((song, index) => {
         const card = document.createElement('div');
         card.className = 'music-card';
@@ -139,7 +157,10 @@ function changePage(direction) {
 }
 
 // Inicializar la interfaz
-generateMusicCards();
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Documento cargado, iniciando carga de canciones...');
+    loadSongs();
+});
 
 // Reproductor de música
 let currentSongIndex = 0;
