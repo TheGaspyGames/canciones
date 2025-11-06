@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Música AI - Gaspy</title>
+  <link rel="icon" href="assets/site-logo.png">
+  <link rel="stylesheet" href="music-styles.css">
+<body>
+  <header class="site-header">
+    <div class="container header-top">
+      <div class="header-left">
+        <div class="site-title">
+          <h1>Mi Música</h1>
+          <p class="subtitle">Música generada con IA</p>
+        </div>
+      </div>
+      <button class="menu-toggle" aria-label="Menú de navegación">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <nav class="main-nav">
+        <a href="/" class="nav-link">🏠 Inicio</a>
+        <a href="/canciones" class="nav-link active">🎵 Mi Música</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="music-gallery">
+      <h2>Mi Música Generada con IA</h2>
+      <p class="description">Explora mi colección de música creada utilizando inteligencia artificial. Cada pieza es única y generada mediante diversos modelos de IA.</p>
+      
+      <div class="filters-section">
+        <div class="search-container">
+          <input type="text" id="search-input" placeholder="Buscar canciones..." 
+                 oninput="currentPage = 1; generateMusicCards();">
+        </div>
+        <div class="filters">
+          <select id="genre-filter" onchange="currentPage = 1; generateMusicCards();">
+            <option value="all">Todos los géneros</option>
+          </select>
+          <select id="model-filter" onchange="currentPage = 1; generateMusicCards();">
+            <option value="all">Todos los modelos</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="music-grid">
+        <!-- Las tarjetas de música se agregarán aquí -->
+      </div>
+
+      <div class="pagination">
+        <!-- Los controles de paginación se agregarán aquí -->
+      </div>
+    </section>
+
+    <section id="about-ai-music" class="info-section">
+      <h2>Sobre la Música AI</h2>
+      <p>Todas las piezas musicales en esta colección han sido creadas utilizando modelos de inteligencia artificial, explorando nuevas formas de expresión musical y creatividad computacional.</p>
+      <div class="download-info">
+        <p>🎵 Todas las canciones están disponibles para:</p>
+        <ul>
+          <li>Reproducción directa en el navegador</li>
+          <li>Descarga gratuita en formato MP3</li>
+          <li>Uso personal (por favor, dar crédito si se usa en otros proyectos)</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div class="audio-player">
+    <div class="song-info">
+      <span id="currentSong">Selecciona una canción</span>
+    </div>
+    <div class="song-progress" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="audio-controls">
+      <button onclick="previousSong()">⏮</button>
+      <button onclick="toggleMusic()" id="musicToggle">▶</button>
+      <button onclick="nextSong()">⏭</button>
+    </div>
+    <div class="playlist" id="playlist">
+      <!-- Las canciones se agregarán aquí dinámicamente -->
+    </div>
+    <audio id="bgMusic">
+      Tu navegador no soporta el elemento de audio.
+    </audio>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Hecho con ♥ — Gaspy</p>
+    </div>
+  </footer>
+
+  <script src="music-player.js"></script>
+</body>
+</html>
