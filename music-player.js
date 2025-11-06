@@ -94,7 +94,7 @@ function generateMusicCards() {
         card.className = 'music-card';
         card.innerHTML = `
             <div class="card-image" onclick="playSongAtIndex(${index})">
-                <img src="${song.cover}" alt="${song.title}" onerror="this.src='assets/default-cover.png'">
+                <img src="${song.cover || 'assets/default-cover.png'}" alt="${song.title}" onerror="this.src='assets/default-cover.png'">
                 <div class="play-overlay">
                     <span class="play-icon">▶</span>
                 </div>
