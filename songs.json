@@ -1391,6 +1391,26 @@
       "aiModel": "IA"
     },
     {
+      "id": "328692ae",
+      "title": "La Isla de Epstein REMIX (1)",
+      "file": "music/La Isla de Epstein REMIX (1).mp3",
+      "cover": "assets/covers/328692ae.jpg",
+      "date": "2025-11-06",
+      "size": 4327155,
+      "genre": "Sin género",
+      "aiModel": "IA"
+    },
+    {
+      "id": "599c70aa",
+      "title": "La Isla de Epstein REMIX",
+      "file": "music/La Isla de Epstein REMIX.mp3",
+      "cover": "assets/covers/599c70aa.jpg",
+      "date": "2025-11-06",
+      "size": 5356020,
+      "genre": "Sin género",
+      "aiModel": "IA"
+    },
+    {
       "id": "1c9098dd",
       "title": "La Isla de Epstein(18)",
       "file": "music/La Isla de Epstein(18).mp3",
