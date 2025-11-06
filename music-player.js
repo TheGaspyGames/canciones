@@ -113,13 +113,22 @@ function generateMusicCards() {
         musicGrid.innerHTML = '<div class="error-message">No hay canciones para mostrar</div>';
         return;
     }
+
+    // Precarga de la imagen por defecto
+    const defaultImage = new Image();
+    defaultImage.src = '/assets/default-cover.svg';
     
     displayedSongs.forEach((song, index) => {
+        // Encontrar el índice real en el array completo de canciones
+        const realIndex = songs.findIndex(s => s.id === song.id);
         const card = document.createElement('div');
         card.className = 'music-card';
         card.innerHTML = `
-            <div class="card-image" onclick="playSongAtIndex(${index})">
-                <img src="${song.cover || 'assets/default-cover.png'}" alt="${song.title}" onerror="if (this.src !== window.location.origin + '/assets/default-cover.png') this.src='assets/default-cover.png';">
+            <div class="card-image" onclick="playSongAtIndex(${realIndex})">
+                <img 
+                    src="${song.cover || 'assets/default-cover.png'}" 
+                    alt="${song.title}" 
+                    onerror="this.onerror=null; this.src='assets/default-cover.png'; this.classList.add('default-cover');">
                 <div class="play-overlay">
                     <span class="play-icon">▶</span>
                 </div>
@@ -135,7 +144,7 @@ function generateMusicCards() {
                     <a href="${song.file}" download class="download-button" onclick="event.stopPropagation()">
                         <span class="download-icon">⬇️</span> Descargar
                     </a>
-                    <button class="play-button" onclick="playSongAtIndex(${index})">
+                    <button class="play-button" onclick="playSongAtIndex(${realIndex})">
                         <span>▶️</span> Reproducir
                     </button>
                 </div>
@@ -204,50 +213,83 @@ function loadCurrentSong() {
   updatePlaylistSelection();
 }
 
+let fadeInterval = null;
+
 function fadeOut(callback) {
-  const fadeInterval = 50; // Intervalo en ms entre cada paso del fade
-  const fadeStep = 0.1; // Cuánto reducir el volumen en cada paso
+  if (fadeInterval) {
+    clearInterval(fadeInterval);
+    fadeInterval = null;
+  }
   
-  let vol = music.volume;
-  const fadeOutInterval = setInterval(() => {
-    if (vol > 0) {
-      vol = Math.max(0, vol - fadeStep);
-      music.volume = vol;
+  const duration = 500; // duración más larga para un fade más suave
+  const steps = 30; // más pasos para una transición más suave
+  const stepTime = duration / steps;
+  const initialVolume = music.volume;
+  const volumeStep = initialVolume / steps;
+  
+  let currentStep = 0;
+  
+  fadeInterval = setInterval(() => {
+    currentStep++;
+    if (currentStep <= steps) {
+      // Usar una curva exponencial para el fade
+      const factor = Math.pow((steps - currentStep) / steps, 2);
+      music.volume = Math.max(0, initialVolume * factor);
     } else {
-      clearInterval(fadeOutInterval);
+      music.volume = 0;
+      clearInterval(fadeInterval);
+      fadeInterval = null;
       if (callback) callback();
     }
-  }, fadeInterval);
+  }, stepTime);
 }
 
 function fadeIn() {
-  const fadeInterval = 50;
-  const fadeStep = 0.1;
+  if (fadeInterval) {
+    clearInterval(fadeInterval);
+    fadeInterval = null;
+  }
   
-  let vol = music.volume;
-  const fadeInInterval = setInterval(() => {
-    if (vol < 1) {
-      vol = Math.min(1, vol + fadeStep);
-      music.volume = vol;
+  const duration = 500;
+  const steps = 30;
+  const stepTime = duration / steps;
+  const targetVolume = 1;
+  
+  let currentStep = 0;
+  
+  fadeInterval = setInterval(() => {
+    currentStep++;
+    if (currentStep <= steps) {
+      // Usar una curva exponencial para el fade
+      const factor = Math.pow(currentStep / steps, 2);
+      music.volume = Math.min(targetVolume, factor);
     } else {
-      clearInterval(fadeInInterval);
+      music.volume = targetVolume;
+      clearInterval(fadeInterval);
+      fadeInterval = null;
     }
-  }, fadeInterval);
+  }, stepTime);
 }
 
 function toggleMusic() {
   if (isPlaying) {
-    fadeOut(() => {
-      music.pause();
-      music.volume = 1; // Restaurar volumen para el próximo play
-    });
     musicButton.textContent = '▶';
     isPlaying = false;
+    fadeOut(() => {
+      music.pause();
+      music.volume = 1;
+    });
   } else {
-    music.play();
-    fadeIn();
-    musicButton.textContent = '⏸';
-    isPlaying = true;
+    music.volume = 0;
+    music.play().then(() => {
+      isPlaying = true;
+      musicButton.textContent = '⏸';
+      fadeIn();
+    }).catch(error => {
+      console.error('Error al reproducir:', error);
+      isPlaying = false;
+      musicButton.textContent = '▶';
+    });
   }
 }
 
