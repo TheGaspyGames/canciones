@@ -158,18 +158,24 @@ function changePage(direction) {
 // Inicializar la interfaz
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Documento cargado, iniciando carga de canciones...');
+    initializePlayerElements();
     loadSongs();
 });
 
-// Reproductor de música
+// Variables globales del reproductor
 let currentSongIndex = 0;
 let isPlaying = false;
-const music = document.getElementById('bgMusic');
-const musicButton = document.getElementById('musicToggle');
-const currentSongElement = document.getElementById('currentSong');
-const progressBar = document.getElementById('progressBar');
-const progressContainer = document.getElementById('progressContainer');
-const playlist = document.getElementById('playlist');
+let music, musicButton, currentSongElement, progressBar, progressContainer, playlist;
+
+// Inicializar variables del reproductor
+function initializePlayerElements() {
+  music = document.getElementById('bgMusic');
+  musicButton = document.getElementById('musicToggle');
+  currentSongElement = document.getElementById('currentSong');
+  progressBar = document.getElementById('progressBar');
+  progressContainer = document.getElementById('progressContainer');
+  playlist = document.getElementById('playlist');
+}
 
 function initializePlaylist() {
   playlist.innerHTML = songs.map((song, index) => `
