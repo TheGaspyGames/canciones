@@ -294,13 +294,35 @@ function toggleMusic() {
 }
 
 function nextSong() {
-  currentSongIndex = (currentSongIndex + 1) % songs.length;
-  loadCurrentSong();
+  const wasPlaying = isPlaying;
+  if (wasPlaying) {
+    fadeOut(() => {
+      currentSongIndex = (currentSongIndex + 1) % songs.length;
+      loadCurrentSong();
+      music.play().then(() => {
+        fadeIn();
+      });
+    });
+  } else {
+    currentSongIndex = (currentSongIndex + 1) % songs.length;
+    loadCurrentSong();
+  }
 }
 
 function previousSong() {
-  currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
-  loadCurrentSong();
+  const wasPlaying = isPlaying;
+  if (wasPlaying) {
+    fadeOut(() => {
+      currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
+      loadCurrentSong();
+      music.play().then(() => {
+        fadeIn();
+      });
+    });
+  } else {
+    currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
+    loadCurrentSong();
+  }
 }
 
 function playSongAtIndex(index) {
@@ -324,8 +346,14 @@ progressContainer.addEventListener('click', (e) => {
 });
 
 // Reproducir siguiente canción cuando termine la actual
-music.addEventListener('ended', () => {
-  nextSong();
+music.addEventListener('timeupdate', () => {
+  // Si estamos cerca del final de la canción (últimos 2 segundos)
+  if (music.duration - music.currentTime <= 2 && !fadeInterval && isPlaying) {
+    fadeOut(() => {
+      music.pause();
+      nextSong();
+    });
+  }
 });
 
 // Inicializar el reproductor: ya se hace tras cargar `songs` en loadSongs().
