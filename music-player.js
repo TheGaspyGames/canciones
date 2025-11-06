@@ -1,3 +1,19 @@
+// Menú de hamburguesa
+const menuToggle = document.querySelector('.menu-toggle');
+const mainNav = document.querySelector('.main-nav');
+
+menuToggle.addEventListener('click', () => {
+  menuToggle.classList.toggle('active');
+  mainNav.classList.toggle('active');
+});
+
+// Cerrar el menú al hacer clic fuera
+document.addEventListener('click', (e) => {
+  if (!menuToggle.contains(e.target) && !mainNav.contains(e.target)) {
+    menuToggle.classList.remove('active');
+    mainNav.classList.remove('active');
+  }
+});
 
 // Función para formatear el tamaño del archivo
 function formatFileSize(bytes) {
@@ -205,19 +221,18 @@ function fadeOut(callback) {
     fadeInterval = null;
   }
   
-  const duration = 500; // duración más larga para un fade más suave
-  const steps = 30; // más pasos para una transición más suave
+  const duration = 800; // duración más larga para un fade más suave
+  const steps = 50; // más pasos para una transición más suave
   const stepTime = duration / steps;
   const initialVolume = music.volume;
-  const volumeStep = initialVolume / steps;
   
   let currentStep = 0;
   
   fadeInterval = setInterval(() => {
     currentStep++;
     if (currentStep <= steps) {
-      // Usar una curva exponencial para el fade
-      const factor = Math.pow((steps - currentStep) / steps, 2);
+      // Usar una curva exponencial suavizada para el fade
+      const factor = Math.pow((steps - currentStep) / steps, 3);
       music.volume = Math.max(0, initialVolume * factor);
     } else {
       music.volume = 0;
@@ -228,25 +243,25 @@ function fadeOut(callback) {
   }, stepTime);
 }
 
-function fadeIn() {
+function fadeIn(targetVolume = 1) {
   if (fadeInterval) {
     clearInterval(fadeInterval);
     fadeInterval = null;
   }
   
-  const duration = 500;
-  const steps = 30;
+  const duration = 800;
+  const steps = 50;
   const stepTime = duration / steps;
-  const targetVolume = 1;
+  const startVolume = music.volume;
   
   let currentStep = 0;
   
   fadeInterval = setInterval(() => {
     currentStep++;
     if (currentStep <= steps) {
-      // Usar una curva exponencial para el fade
-      const factor = Math.pow(currentStep / steps, 2);
-      music.volume = Math.min(targetVolume, factor);
+      // Usar una curva exponencial suavizada para el fade
+      const factor = Math.pow(currentStep / steps, 3);
+      music.volume = startVolume + (targetVolume - startVolume) * factor;
     } else {
       music.volume = targetVolume;
       clearInterval(fadeInterval);
@@ -257,18 +272,21 @@ function fadeIn() {
 
 function toggleMusic() {
   if (isPlaying) {
-    musicButton.textContent = '▶';
     isPlaying = false;
+    musicButton.textContent = '▶';
     fadeOut(() => {
       music.pause();
-      music.volume = 1;
+      // No restauramos el volumen aquí para mantener el estado del fade
     });
   } else {
-    music.volume = 0;
+    // Guardamos el volumen actual antes de empezar
+    const currentVolume = music.volume;
+    music.volume = 0; // Comenzamos desde silencio
     music.play().then(() => {
       isPlaying = true;
       musicButton.textContent = '⏸';
-      fadeIn();
+      // Si estábamos en medio de un fade out, comenzamos desde ese punto
+      fadeIn(currentVolume);
     }).catch(error => {
       console.error('Error al reproducir:', error);
       isPlaying = false;
@@ -278,34 +296,24 @@ function toggleMusic() {
 }
 
 function nextSong() {
-  const wasPlaying = isPlaying;
-  if (wasPlaying) {
-    fadeOut(() => {
-      currentSongIndex = (currentSongIndex + 1) % songs.length;
-      loadCurrentSong();
-      music.play().then(() => {
-        fadeIn();
-      });
+  currentSongIndex = (currentSongIndex + 1) % songs.length;
+  loadCurrentSong();
+  if (isPlaying) {
+    music.volume = 0;
+    music.play().then(() => {
+      fadeIn();
     });
-  } else {
-    currentSongIndex = (currentSongIndex + 1) % songs.length;
-    loadCurrentSong();
   }
 }
 
 function previousSong() {
-  const wasPlaying = isPlaying;
-  if (wasPlaying) {
-    fadeOut(() => {
-      currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
-      loadCurrentSong();
-      music.play().then(() => {
-        fadeIn();
-      });
+  currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
+  loadCurrentSong();
+  if (isPlaying) {
+    music.volume = 0;
+    music.play().then(() => {
+      fadeIn();
     });
-  } else {
-    currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
-    loadCurrentSong();
   }
 }
 
@@ -330,14 +338,14 @@ progressContainer.addEventListener('click', (e) => {
 });
 
 // Reproducir siguiente canción cuando termine la actual
-music.addEventListener('timeupdate', () => {
-  // Si estamos cerca del final de la canción (últimos 2 segundos)
-  if (music.duration - music.currentTime <= 2 && !fadeInterval && isPlaying) {
-    fadeOut(() => {
-      music.pause();
-      nextSong();
+music.addEventListener('ended', () => {
+  fadeOut(() => {
+    nextSong();
+    music.volume = 0;
+    music.play().then(() => {
+      fadeIn();
     });
-  }
+  });
 });
 
 // Inicializar el reproductor: ya se hace tras cargar `songs` en loadSongs().
