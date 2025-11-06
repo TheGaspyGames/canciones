@@ -140,7 +140,7 @@ function generateMusicCards() {
 
   // Precarga de la imagen por defecto
   const defaultImage = new Image();
-  defaultImage.src = '/assets/default-cover.svg';
+  defaultImage.src = 'assets/default-cover.png';
   
   displayedSongs.forEach((song, index) => {
     // Encontrar el índice real en el array completo de canciones
@@ -152,7 +152,8 @@ function generateMusicCards() {
         <img 
           src="${song.cover || 'assets/default-cover.png'}" 
           alt="${song.title}" 
-          onerror="this.onerror=null; this.src='assets/default-cover.png'; this.classList.add('default-cover');">
+          loading="lazy"
+          onerror="this.onerror=null; this.src='assets/default-cover.png'; this.classList.add('default-cover')">
         <div class="play-overlay">
           <span class="play-icon">▶</span>
         </div>
@@ -278,6 +279,11 @@ function fadeIn(targetVolume = 1) {
 
 // Control de reproducción
 function toggleMusic() {
+  if (!music.src) {
+    console.warn('No hay una canción seleccionada');
+    return;
+  }
+
   if (isPlaying) {
     isPlaying = false;
     musicButton.textContent = '▶';
@@ -285,17 +291,22 @@ function toggleMusic() {
       music.pause();
     });
   } else {
-    const currentVolume = music.volume;
+    const currentVolume = music.volume || 1; // Si el volumen es 0, usamos 1 como predeterminado
     music.volume = 0;
-    music.play().then(() => {
-      isPlaying = true;
-      musicButton.textContent = '⏸';
-      fadeIn(currentVolume);
-    }).catch(error => {
-      console.error('Error al reproducir:', error);
-      isPlaying = false;
-      musicButton.textContent = '▶';
-    });
+    
+    const playPromise = music.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+        isPlaying = true;
+        musicButton.textContent = '⏸';
+        fadeIn(currentVolume);
+      }).catch(error => {
+        console.error('Error al reproducir:', error);
+        isPlaying = false;
+        musicButton.textContent = '▶';
+        music.currentTime = 0; // Reiniciamos la posición si hay error
+      });
+    }
   }
 }
 
