@@ -1,19 +1,3 @@
-// Menú de hamburguesa
-const menuToggle = document.querySelector('.menu-toggle');
-const mainNav = document.querySelector('.main-nav');
-
-menuToggle.addEventListener('click', () => {
-  menuToggle.classList.toggle('active');
-  mainNav.classList.toggle('active');
-});
-
-// Cerrar el menú al hacer clic fuera
-document.addEventListener('click', (e) => {
-  if (!menuToggle.contains(e.target) && !mainNav.contains(e.target)) {
-    menuToggle.classList.remove('active');
-    mainNav.classList.remove('active');
-  }
-});
 
 // Función para formatear el tamaño del archivo
 function formatFileSize(bytes) {
