@@ -119,7 +119,7 @@ function generateMusicCards() {
         card.className = 'music-card';
         card.innerHTML = `
             <div class="card-image" onclick="playSongAtIndex(${index})">
-                <img src="${song.cover || 'assets/default-cover.png'}" alt="${song.title}" onerror="this.src='assets/default-cover.png'">
+                <img src="${song.cover || 'assets/default-cover.png'}" alt="${song.title}" onerror="if (this.src !== window.location.origin + '/assets/default-cover.png') this.src='assets/default-cover.png';">
                 <div class="play-overlay">
                     <span class="play-icon">▶</span>
                 </div>
@@ -204,15 +204,51 @@ function loadCurrentSong() {
   updatePlaylistSelection();
 }
 
+function fadeOut(callback) {
+  const fadeInterval = 50; // Intervalo en ms entre cada paso del fade
+  const fadeStep = 0.1; // Cuánto reducir el volumen en cada paso
+  
+  let vol = music.volume;
+  const fadeOutInterval = setInterval(() => {
+    if (vol > 0) {
+      vol = Math.max(0, vol - fadeStep);
+      music.volume = vol;
+    } else {
+      clearInterval(fadeOutInterval);
+      if (callback) callback();
+    }
+  }, fadeInterval);
+}
+
+function fadeIn() {
+  const fadeInterval = 50;
+  const fadeStep = 0.1;
+  
+  let vol = music.volume;
+  const fadeInInterval = setInterval(() => {
+    if (vol < 1) {
+      vol = Math.min(1, vol + fadeStep);
+      music.volume = vol;
+    } else {
+      clearInterval(fadeInInterval);
+    }
+  }, fadeInterval);
+}
+
 function toggleMusic() {
   if (isPlaying) {
-    music.pause();
+    fadeOut(() => {
+      music.pause();
+      music.volume = 1; // Restaurar volumen para el próximo play
+    });
     musicButton.textContent = '▶';
+    isPlaying = false;
   } else {
     music.play();
+    fadeIn();
     musicButton.textContent = '⏸';
+    isPlaying = true;
   }
-  isPlaying = !isPlaying;
 }
 
 function nextSong() {
