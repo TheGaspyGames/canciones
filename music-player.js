@@ -29,16 +29,42 @@ function initializePlayerElements() {
   
   // Inicializar eventos del reproductor
   if (music && progressContainer) {
+    // Actualizar la barra de progreso mientras se reproduce
     music.addEventListener('timeupdate', () => {
-      const progress = (music.currentTime / music.duration) * 100;
-      progressBar.style.width = `${progress}%`;
+      if (!isNaN(music.duration)) {
+        const progress = (music.currentTime / music.duration) * 100;
+        progressBar.style.width = `${progress}%`;
+      }
     });
 
-    progressContainer.addEventListener('click', (e) => {
-      const clickPosition = e.offsetX / progressContainer.offsetWidth;
-      music.currentTime = clickPosition * music.duration;
+    // Permitir hacer clic y arrastrar en la barra de progreso
+    let isDragging = false;
+
+    progressContainer.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      updateProgress(e);
     });
 
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        updateProgress(e);
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    // Función para actualizar el progreso
+    function updateProgress(e) {
+      const rect = progressContainer.getBoundingClientRect();
+      const clickPosition = (e.clientX - rect.left) / rect.width;
+      if (clickPosition >= 0 && clickPosition <= 1) {
+        music.currentTime = clickPosition * music.duration;
+      }
+    }
+
+    // Reproducir siguiente canción cuando termine la actual
     music.addEventListener('ended', () => {
       fadeOut(() => {
         nextSong();
@@ -230,17 +256,17 @@ function fadeOut(callback) {
     fadeInterval = null;
   }
   
-  const duration = 800;
-  const steps = 50;
+  const duration = 400; // Duración más corta para el fade out
+  const steps = 30;
   const stepTime = duration / steps;
-  const initialVolume = music.volume;
+  const initialVolume = music.volume || lastKnownVolume;
   
   let currentStep = 0;
   
   fadeInterval = setInterval(() => {
     currentStep++;
     if (currentStep <= steps) {
-      const factor = Math.pow((steps - currentStep) / steps, 3);
+      const factor = Math.pow((steps - currentStep) / steps, 2);
       music.volume = Math.max(0, initialVolume * factor);
     } else {
       music.volume = 0;
@@ -257,20 +283,22 @@ function fadeIn(targetVolume = 1) {
     fadeInterval = null;
   }
   
-  const duration = 800;
-  const steps = 50;
+  const duration = 400; // Duración más corta para el fade in
+  const steps = 30;
   const stepTime = duration / steps;
   const startVolume = music.volume;
+  targetVolume = Math.max(0.1, Math.min(1, targetVolume)); // Asegurar un volumen válido
   
   let currentStep = 0;
   
   fadeInterval = setInterval(() => {
     currentStep++;
     if (currentStep <= steps) {
-      const factor = Math.pow(currentStep / steps, 3);
+      const factor = Math.pow(currentStep / steps, 2);
       music.volume = startVolume + (targetVolume - startVolume) * factor;
     } else {
       music.volume = targetVolume;
+      lastKnownVolume = targetVolume; // Actualizar el último volumen conocido
       clearInterval(fadeInterval);
       fadeInterval = null;
     }
@@ -278,6 +306,8 @@ function fadeIn(targetVolume = 1) {
 }
 
 // Control de reproducción
+let lastKnownVolume = 1; // Variable global para mantener el último volumen conocido
+
 function toggleMusic() {
   if (!music.src) {
     console.warn('No hay una canción seleccionada');
@@ -285,27 +315,34 @@ function toggleMusic() {
   }
 
   if (isPlaying) {
-    isPlaying = false;
-    musicButton.textContent = '▶';
+    // Si está reproduciendo, pausar
+    lastKnownVolume = music.volume > 0 ? music.volume : lastKnownVolume; // Guardar volumen actual
     fadeOut(() => {
       music.pause();
+      isPlaying = false;
+      musicButton.textContent = '▶';
     });
   } else {
-    const currentVolume = music.volume || 1; // Si el volumen es 0, usamos 1 como predeterminado
-    music.volume = 0;
+    // Si está pausado, reproducir
+    music.volume = 0; // Empezamos desde silencio
     
-    const playPromise = music.play();
-    if (playPromise !== undefined) {
-      playPromise.then(() => {
-        isPlaying = true;
-        musicButton.textContent = '⏸';
-        fadeIn(currentVolume);
-      }).catch(error => {
-        console.error('Error al reproducir:', error);
-        isPlaying = false;
-        musicButton.textContent = '▶';
-        music.currentTime = 0; // Reiniciamos la posición si hay error
-      });
+    // Intentar reproducir y manejar la promesa
+    try {
+      music.play()
+        .then(() => {
+          isPlaying = true;
+          musicButton.textContent = '⏸';
+          fadeIn(lastKnownVolume); // Usar el último volumen conocido
+        })
+        .catch(error => {
+          console.error('Error al reproducir:', error);
+          isPlaying = false;
+          musicButton.textContent = '▶';
+        });
+    } catch (error) {
+      console.error('Error al intentar reproducir:', error);
+      isPlaying = false;
+      musicButton.textContent = '▶';
     }
   }
 }
