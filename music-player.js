@@ -1,7 +1,7 @@
 // Variables globales
 const DEFAULT_COVER = 'assets/default-cover.png';
 const DISCORD_ALLOWED_USER_ID = window.DISCORD_ALLOWED_USER_ID || '684395420004253729';
-const DISCORD_CLIENT_ID = window.DISCORD_CLIENT_ID || 'REEMPLAZA_CON_TU_CLIENT_ID';
+const DISCORD_CLIENT_ID = window.DISCORD_CLIENT_ID || '1405367857109532732';
 const DISCORD_SCOPE = 'identify';
 const DISCORD_STORAGE_KEY = 'discordAccessToken';
 const DISCORD_REDIRECT_URI =
@@ -17,6 +17,8 @@ const GITHUB_SONGS_PATH = window.GITHUB_SONGS_PATH || 'songs.json';
 const GITHUB_MUSIC_DIR = window.GITHUB_MUSIC_DIR || 'music';
 const GITHUB_COVER_DIR = window.GITHUB_COVER_DIR || 'assets/covers';
 const GITHUB_METADATA_DIR = window.GITHUB_METADATA_DIR || 'music-metadata';
+const GITHUB_METADATA_INDEX_PATH =
+  window.GITHUB_METADATA_INDEX_PATH || `${GITHUB_METADATA_DIR}/index.json`;
 const GITHUB_API_BASE = 'https://api.github.com';
 
 let songs = [];
@@ -156,7 +158,11 @@ async function beginDiscordLogin() {
 }
 
 function buildRawGitHubUrl(path) {
-  return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${path}`;
+  const encodedPath = path
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${encodedPath}`;
 }
 
 function resolveRepoAsset(path, fallback) {
@@ -241,15 +247,64 @@ async function fetchGitHubDirectory(path) {
   return Array.isArray(payload) ? payload : [];
 }
 
-async function fetchMetadataSongs() {
-  if (!GITHUB_OWNER || !GITHUB_REPO || !GITHUB_BRANCH || !GITHUB_METADATA_DIR) {
+function normalizeMetadataSong(data) {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const normalized = {
+    ...data,
+    file: resolveRepoAsset(data.file, ''),
+    cover: resolveRepoAsset(data.cover, DEFAULT_COVER)
+  };
+
+  return normalized.file ? normalized : null;
+}
+
+async function fetchMetadataIndexSongs() {
+  if (!GITHUB_METADATA_INDEX_PATH) {
     return [];
   }
 
+  const indexUrl = buildRawGitHubUrl(GITHUB_METADATA_INDEX_PATH);
+  const response = await fetch(`${indexUrl}?cacheBust=${Date.now()}`);
+
+  if (!response.ok) {
+    throw new Error(
+      `GitHub respondió ${response.status} al leer ${GITHUB_METADATA_INDEX_PATH}`
+    );
+  }
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new Error('El índice de metadata no contiene un JSON válido.');
+  }
+
+  const songsFromIndex = Array.isArray(payload?.songs)
+    ? payload.songs.map(normalizeMetadataSong).filter(Boolean)
+    : [];
+
+  if (!songsFromIndex.length) {
+    return [];
+  }
+
+  return songsFromIndex.sort((a, b) => {
+    const dateA = new Date(a.date || 0).getTime();
+    const dateB = new Date(b.date || 0).getTime();
+    return dateB - dateA;
+  });
+}
+
+async function fetchMetadataSongsFromDirectory() {
   const directoryEntries = await fetchGitHubDirectory(GITHUB_METADATA_DIR);
-  const metadataFiles = directoryEntries.filter(
-    (entry) => entry.type === 'file' && entry.name.toLowerCase().endsWith('.json')
-  );
+  const metadataFiles = directoryEntries.filter((entry) => {
+    if (entry.type !== 'file') return false;
+    const lowerName = entry.name.toLowerCase();
+    if (!lowerName.endsWith('.json')) return false;
+    return lowerName !== 'index.json';
+  });
 
   if (!metadataFiles.length) {
     return [];
@@ -270,15 +325,7 @@ async function fetchMetadataSongs() {
 
         try {
           const data = await response.json();
-          if (!data || typeof data !== 'object') {
-            return null;
-          }
-
-          return {
-            ...data,
-            file: resolveRepoAsset(data.file, ''),
-            cover: resolveRepoAsset(data.cover, DEFAULT_COVER)
-          };
+          return normalizeMetadataSong(data);
         } catch (error) {
           console.warn(`No se pudo parsear metadata ${entry.name}:`, error);
           return null;
@@ -288,13 +335,29 @@ async function fetchMetadataSongs() {
     songsFromMetadata.push(...chunkResults.filter(Boolean));
   }
 
-  return songsFromMetadata
-    .filter((song) => song && song.file)
-    .sort((a, b) => {
-      const dateA = new Date(a.date || 0).getTime();
-      const dateB = new Date(b.date || 0).getTime();
-      return dateB - dateA;
-    });
+  return songsFromMetadata.sort((a, b) => {
+    const dateA = new Date(a.date || 0).getTime();
+    const dateB = new Date(b.date || 0).getTime();
+    return dateB - dateA;
+  });
+}
+
+async function fetchMetadataSongs() {
+  if (!GITHUB_OWNER || !GITHUB_REPO || !GITHUB_BRANCH || !GITHUB_METADATA_DIR) {
+    return [];
+  }
+
+  try {
+    const songsFromIndex = await fetchMetadataIndexSongs();
+    if (songsFromIndex.length) {
+      return songsFromIndex;
+    }
+    console.warn('El índice de metadata está vacío. Se intentará leer archivo por archivo.');
+  } catch (error) {
+    console.warn('No se pudo cargar el índice de metadata. Se leerán los archivos individuales.', error);
+  }
+
+  return fetchMetadataSongsFromDirectory();
 }
 
 async function fetchGitHubFile(path, token) {
@@ -326,6 +389,47 @@ async function fetchGitHubJson(path, token) {
     sha: payload.sha,
     json: JSON.parse(decoded)
   };
+}
+
+async function updateMetadataIndexFile(newSongEntry, token, commitMessage) {
+  if (!GITHUB_METADATA_INDEX_PATH) {
+    return;
+  }
+
+  let currentIndex = { songs: [] };
+  let currentSha;
+
+  try {
+    const existingIndex = await fetchGitHubJson(GITHUB_METADATA_INDEX_PATH, token);
+    currentIndex = existingIndex.json || { songs: [] };
+    currentSha = existingIndex.sha;
+  } catch (error) {
+    if (!`${error?.message || ''}`.includes('404')) {
+      throw error;
+    }
+  }
+
+  if (!Array.isArray(currentIndex.songs)) {
+    currentIndex.songs = [];
+  }
+
+  currentIndex.songs = currentIndex.songs.filter(
+    (song) => song.file !== newSongEntry.file && song.id !== newSongEntry.id
+  );
+  currentIndex.songs.unshift(newSongEntry);
+
+  const updatedIndexContent = `${JSON.stringify(currentIndex, null, 2)}\n`;
+  const indexMessage = commitMessage
+    ? `${commitMessage} (actualizar índice metadata)`
+    : `Actualizar índice de metadata con ${newSongEntry.title}`;
+
+  await putGitHubFile(
+    GITHUB_METADATA_INDEX_PATH,
+    encodeStringToBase64(updatedIndexContent),
+    token,
+    indexMessage,
+    currentSha
+  );
 }
 
 function populateSelectOptions(select, values, defaultLabel) {
@@ -1173,6 +1277,8 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
     token,
     metadataMessage
   );
+
+  await updateMetadataIndexFile(newSongEntry, token, commitMessage);
 
   try {
     const songsData = await fetchGitHubJson(GITHUB_SONGS_PATH, token);
