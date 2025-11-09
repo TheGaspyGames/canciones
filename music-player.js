@@ -173,7 +173,7 @@ function isGitHubConfigured() {
     !GITHUB_REPO ||
     !GITHUB_BRANCH ||
     !GITHUB_SONGS_PATH ||
-    !GITHUB_MUSIC_DIR || 
+    !GITHUB_MUSIC_DIR ||
     !GITHUB_COVER_DIR ||
     !GITHUB_METADATA_DIR
   ) {
@@ -757,48 +757,29 @@ function initializePlayerElements() {
   }
 }
 
-// Cargar canciones desde la metadata en GitHub (con fallback a songs.json local)
+// Cargar canciones desde la metadata en GitHub
 async function loadSongs() {
+  const musicGrid = document.querySelector('.music-grid');
+
   try {
     console.log('Intentando cargar metadata de canciones desde GitHub...');
     const metadataSongs = await fetchMetadataSongs();
-    if (metadataSongs.length) {
-      console.log(`Se obtuvieron ${metadataSongs.length} canciones desde la metadata.`);
-      songs = metadataSongs;
-      refreshInterface({ resetPage: true });
-      return;
+    if (!metadataSongs.length) {
+      throw new Error('No se encontraron canciones en la metadata remota.');
     }
 
-    console.warn('No se encontraron canciones en la metadata remota. Se usará songs.json local.');
-  } catch (metadataError) {
-    console.error('No se pudo cargar la metadata remota:', metadataError);
-  }
-
-  try {
-    console.log('Intentando cargar songs.json local...');
-    const response = await fetch(`songs.json?cacheBust=${Date.now()}`);
-    if (!response.ok) {
-      throw new Error(`Respuesta ${response.status} al leer songs.json`);
-    }
-    const data = await response.json();
-    if (!Array.isArray(data?.songs)) {
-      throw new Error('songs.json no contiene una lista válida de canciones');
-    }
-
-    songs = data.songs.map((song) => ({
-      ...song,
-      file: resolveRepoAsset(song.file, ''),
-      cover: resolveRepoAsset(song.cover, DEFAULT_COVER)
-    }));
+    console.log(`Se obtuvieron ${metadataSongs.length} canciones desde la metadata.`);
+    songs = metadataSongs;
     refreshInterface({ resetPage: true });
-  } catch (fallbackError) {
-    console.error('Error cargando las canciones:', fallbackError);
-    const musicGrid = document.querySelector('.music-grid');
+  } catch (error) {
+    console.error('Error cargando las canciones desde la metadata:', error);
+    songs = [];
+    refreshInterface({ resetPage: true });
     if (musicGrid) {
       musicGrid.innerHTML = `
         <div class="error-message">
-          Error cargando las canciones. Por favor, intenta recargar la página.<br>
-          Detalles del error: ${fallbackError.message}
+          No se pudieron cargar las canciones desde GitHub.<br>
+          Detalles del error: ${error.message}
         </div>
       `;
     }
