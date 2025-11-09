@@ -16,6 +16,7 @@ const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
 const GITHUB_SONGS_PATH = window.GITHUB_SONGS_PATH || 'songs.json';
 const GITHUB_MUSIC_DIR = window.GITHUB_MUSIC_DIR || 'music';
 const GITHUB_COVER_DIR = window.GITHUB_COVER_DIR || 'assets/covers';
+const GITHUB_METADATA_DIR = window.GITHUB_METADATA_DIR || 'music-metadata';
 const GITHUB_API_BASE = 'https://api.github.com';
 
 let songs = [];
@@ -158,14 +159,23 @@ function buildRawGitHubUrl(path) {
   return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${path}`;
 }
 
+function resolveRepoAsset(path, fallback) {
+  if (!path) return fallback;
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  return buildRawGitHubUrl(path);
+}
+
 function isGitHubConfigured() {
   if (
     !GITHUB_OWNER ||
     !GITHUB_REPO ||
     !GITHUB_BRANCH ||
     !GITHUB_SONGS_PATH ||
-    !GITHUB_MUSIC_DIR ||
-    !GITHUB_COVER_DIR
+    !GITHUB_MUSIC_DIR || 
+    !GITHUB_COVER_DIR ||
+    !GITHUB_METADATA_DIR
   ) {
     return {
       valid: false,
@@ -206,6 +216,85 @@ async function githubRequest(path, { method = 'GET', token, body } = {}) {
   }
 
   return response.json();
+}
+
+async function fetchGitHubDirectory(path) {
+  const url = `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${encodeURIComponent(
+    GITHUB_BRANCH
+  )}&cacheBust=${Date.now()}`;
+  const response = await fetch(url, {
+    headers: { Accept: 'application/vnd.github+json' }
+  });
+
+  if (response.status === 404) {
+    return [];
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `GitHub respondió ${response.status} al listar ${path}${text ? `: ${text}` : ''}`
+    );
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload) ? payload : [];
+}
+
+async function fetchMetadataSongs() {
+  if (!GITHUB_OWNER || !GITHUB_REPO || !GITHUB_BRANCH || !GITHUB_METADATA_DIR) {
+    return [];
+  }
+
+  const directoryEntries = await fetchGitHubDirectory(GITHUB_METADATA_DIR);
+  const metadataFiles = directoryEntries.filter(
+    (entry) => entry.type === 'file' && entry.name.toLowerCase().endsWith('.json')
+  );
+
+  if (!metadataFiles.length) {
+    return [];
+  }
+
+  const limitedParallelism = 4;
+  const songsFromMetadata = [];
+  for (let i = 0; i < metadataFiles.length; i += limitedParallelism) {
+    const chunk = metadataFiles.slice(i, i + limitedParallelism);
+    const chunkResults = await Promise.all(
+      chunk.map(async (entry) => {
+        const downloadUrl = entry.download_url || buildRawGitHubUrl(`${GITHUB_METADATA_DIR}/${entry.name}`);
+        const response = await fetch(`${downloadUrl}?cacheBust=${Date.now()}`);
+        if (!response.ok) {
+          console.warn(`No se pudo leer metadata ${entry.name}:`, response.status);
+          return null;
+        }
+
+        try {
+          const data = await response.json();
+          if (!data || typeof data !== 'object') {
+            return null;
+          }
+
+          return {
+            ...data,
+            file: resolveRepoAsset(data.file, ''),
+            cover: resolveRepoAsset(data.cover, DEFAULT_COVER)
+          };
+        } catch (error) {
+          console.warn(`No se pudo parsear metadata ${entry.name}:`, error);
+          return null;
+        }
+      })
+    );
+    songsFromMetadata.push(...chunkResults.filter(Boolean));
+  }
+
+  return songsFromMetadata
+    .filter((song) => song && song.file)
+    .sort((a, b) => {
+      const dateA = new Date(a.date || 0).getTime();
+      const dateB = new Date(b.date || 0).getTime();
+      return dateB - dateA;
+    });
 }
 
 async function fetchGitHubFile(path, token) {
@@ -668,26 +757,51 @@ function initializePlayerElements() {
   }
 }
 
-// Cargar canciones desde el JSON
+// Cargar canciones desde la metadata en GitHub (con fallback a songs.json local)
 async function loadSongs() {
   try {
-    console.log('Intentando cargar songs.json...');
-    const response = await fetch('songs.json');
-    console.log('Respuesta recibida:', response);
-    const data = await response.json();
-    console.log('Datos cargados:', data);
-    songs = data.songs;
-    console.log('Canciones guardadas:', songs.length);
+    console.log('Intentando cargar metadata de canciones desde GitHub...');
+    const metadataSongs = await fetchMetadataSongs();
+    if (metadataSongs.length) {
+      console.log(`Se obtuvieron ${metadataSongs.length} canciones desde la metadata.`);
+      songs = metadataSongs;
+      refreshInterface({ resetPage: true });
+      return;
+    }
 
+    console.warn('No se encontraron canciones en la metadata remota. Se usará songs.json local.');
+  } catch (metadataError) {
+    console.error('No se pudo cargar la metadata remota:', metadataError);
+  }
+
+  try {
+    console.log('Intentando cargar songs.json local...');
+    const response = await fetch(`songs.json?cacheBust=${Date.now()}`);
+    if (!response.ok) {
+      throw new Error(`Respuesta ${response.status} al leer songs.json`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data?.songs)) {
+      throw new Error('songs.json no contiene una lista válida de canciones');
+    }
+
+    songs = data.songs.map((song) => ({
+      ...song,
+      file: resolveRepoAsset(song.file, ''),
+      cover: resolveRepoAsset(song.cover, DEFAULT_COVER)
+    }));
     refreshInterface({ resetPage: true });
-  } catch (error) {
-    console.error('Error cargando las canciones:', error);
-    document.querySelector('.music-grid').innerHTML = `
-      <div class="error-message">
-        Error cargando las canciones. Por favor, intenta recargar la página.<br>
-        Detalles del error: ${error.message}
-      </div>
-    `;
+  } catch (fallbackError) {
+    console.error('Error cargando las canciones:', fallbackError);
+    const musicGrid = document.querySelector('.music-grid');
+    if (musicGrid) {
+      musicGrid.innerHTML = `
+        <div class="error-message">
+          Error cargando las canciones. Por favor, intenta recargar la página.<br>
+          Detalles del error: ${fallbackError.message}
+        </div>
+      `;
+    }
   }
 }
 
@@ -1055,17 +1169,6 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
     await putGitHubFile(coverRepoPath, coverBase64, token, coverMessage);
   }
 
-  let songsData;
-  try {
-    songsData = await fetchGitHubJson(GITHUB_SONGS_PATH, token);
-  } catch (error) {
-    throw new Error(`No se pudo leer ${GITHUB_SONGS_PATH} en GitHub. ${error.message}`);
-  }
-
-  if (!Array.isArray(songsData.json.songs)) {
-    songsData.json.songs = [];
-  }
-
   const newSongEntry = {
     id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `song-${uniqueSuffix}`,
     title: sanitizedTitle,
@@ -1078,27 +1181,48 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
     downloadName: `${baseFileName}.${audioExtension}`
   };
 
-  songsData.json.songs = songsData.json.songs.filter((song) => song.file !== audioRepoPath);
-  songsData.json.songs.unshift(newSongEntry);
-  const updatedContent = `${JSON.stringify(songsData.json, null, 2)}\n`;
-  const songsMessage = commitMessage
-    ? `${commitMessage} (actualizar songs.json)`
-    : `Actualizar songs.json con ${sanitizedTitle}`;
+  const metadataRepoPath = `${GITHUB_METADATA_DIR}/${baseFileName}.json`;
+  const metadataMessage = commitMessage
+    ? `${commitMessage} (metadata)`
+    : `Añadir metadata para ${sanitizedTitle}`;
 
   await putGitHubFile(
-    GITHUB_SONGS_PATH,
-    encodeStringToBase64(updatedContent),
+    metadataRepoPath,
+    encodeStringToBase64(`${JSON.stringify(newSongEntry, null, 2)}\n`),
     token,
-    songsMessage,
-    songsData.sha
+    metadataMessage
   );
+
+  try {
+    const songsData = await fetchGitHubJson(GITHUB_SONGS_PATH, token);
+    if (!Array.isArray(songsData.json.songs)) {
+      songsData.json.songs = [];
+    }
+
+    songsData.json.songs = songsData.json.songs.filter((song) => song.file !== audioRepoPath);
+    songsData.json.songs.unshift(newSongEntry);
+    const updatedContent = `${JSON.stringify(songsData.json, null, 2)}\n`;
+    const songsMessage = commitMessage
+      ? `${commitMessage} (actualizar songs.json)`
+      : `Actualizar songs.json con ${sanitizedTitle}`;
+
+    await putGitHubFile(
+      GITHUB_SONGS_PATH,
+      encodeStringToBase64(updatedContent),
+      token,
+      songsMessage,
+      songsData.sha
+    );
+  } catch (error) {
+    console.warn('No se pudo actualizar songs.json. La metadata individual seguirá disponible.', error);
+  }
 
   return {
     repoSong: newSongEntry,
     clientSong: {
       ...newSongEntry,
-      file: buildRawGitHubUrl(audioRepoPath),
-      cover: coverRepoPath ? buildRawGitHubUrl(coverRepoPath) : DEFAULT_COVER
+      file: resolveRepoAsset(audioRepoPath, ''),
+      cover: resolveRepoAsset(coverRepoPath, DEFAULT_COVER)
     }
   };
 }
