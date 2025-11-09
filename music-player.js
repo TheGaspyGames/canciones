@@ -173,7 +173,7 @@ function isGitHubConfigured() {
     !GITHUB_REPO ||
     !GITHUB_BRANCH ||
     !GITHUB_SONGS_PATH ||
-    !GITHUB_MUSIC_DIR ||
+    !GITHUB_MUSIC_DIR || 
     !GITHUB_COVER_DIR ||
     !GITHUB_METADATA_DIR
   ) {
