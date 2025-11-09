@@ -6,6 +6,9 @@ const DISCORD_SCOPE = 'identify';
 const DISCORD_STORAGE_KEY = 'discordAccessToken';
 const DISCORD_REDIRECT_URI =
   window.DISCORD_REDIRECT_URI || `${window.location.origin}${window.location.pathname}`;
+const DISCORD_AUTH_BASE = 'https://discord.com/oauth2/authorize';
+const DISCORD_TOKEN_ENDPOINT = 'https://discord.com/api/oauth2/token';
+const DISCORD_CODE_VERIFIER_KEY = 'discordCodeVerifier';
 
 const GITHUB_OWNER = window.GITHUB_OWNER || 'thegaspygames';
 const GITHUB_REPO = window.GITHUB_REPO || 'canciones';
@@ -96,6 +99,59 @@ function decodeBase64ToString(base64Value) {
     return new TextDecoder().decode(bytes);
   }
   return decodeURIComponent(escape(binary));
+}
+
+function base64UrlEncodeFromUint8(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function generateCodeVerifier(length = 64) {
+  const array = new Uint8Array(length);
+  if (window.crypto && window.crypto.getRandomValues) {
+    window.crypto.getRandomValues(array);
+  } else {
+    for (let i = 0; i < array.length; i += 1) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  return base64UrlEncodeFromUint8(array);
+}
+
+async function createCodeChallenge(verifier) {
+  if (window.crypto?.subtle && typeof TextEncoder !== 'undefined') {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const digest = await window.crypto.subtle.digest('SHA-256', data);
+    return base64UrlEncodeFromUint8(new Uint8Array(digest));
+  }
+  throw new Error('Tu navegador no soporta la autenticación segura de Discord (PKCE).');
+}
+
+async function beginDiscordLogin() {
+  try {
+    const verifier = generateCodeVerifier();
+    const challenge = await createCodeChallenge(verifier);
+    sessionStorage.setItem(DISCORD_CODE_VERIFIER_KEY, verifier);
+
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: DISCORD_CLIENT_ID,
+      scope: DISCORD_SCOPE,
+      redirect_uri: DISCORD_REDIRECT_URI,
+      prompt: 'consent',
+      code_challenge: challenge,
+      code_challenge_method: 'S256'
+    });
+
+    window.location.href = `${DISCORD_AUTH_BASE}?${params.toString()}`;
+  } catch (error) {
+    console.error('No se pudo iniciar la autenticación con Discord:', error);
+    updateDiscordStatus('No se pudo iniciar la autenticación con Discord. Intenta nuevamente.', 'error');
+  }
 }
 
 function buildRawGitHubUrl(path) {
@@ -268,7 +324,10 @@ function setUploadFormEnabled(isEnabled) {
 
 function isDiscordOAuthConfigured() {
   if (!DISCORD_CLIENT_ID || DISCORD_CLIENT_ID === 'REEMPLAZA_CON_TU_CLIENT_ID') {
-    return { valid: false, reason: 'Configura tu CLIENT ID de Discord en music-player.js.' };
+    return {
+      valid: false,
+      reason: 'Configura tu CLIENT ID de Discord en assets/config.js para habilitar el acceso.'
+    };
   }
 
   if (
@@ -286,21 +345,14 @@ function isDiscordOAuthConfigured() {
   return { valid: true };
 }
 
-function buildDiscordAuthUrl() {
-  const params = new URLSearchParams({
-    response_type: 'token',
-    client_id: DISCORD_CLIENT_ID,
-    scope: DISCORD_SCOPE,
-    redirect_uri: DISCORD_REDIRECT_URI,
-    prompt: 'consent'
-  });
-  return `https://discord.com/api/oauth2/authorize?${params.toString()}`;
-}
-
-function storeDiscordToken(token, expiresInSeconds) {
+function storeDiscordToken(token, expiresInSeconds, refreshToken) {
   if (!token) return;
   const expiresAt = Date.now() + (Number(expiresInSeconds) || 3600) * 1000;
-  const payload = JSON.stringify({ token, expiresAt });
+  const payload = JSON.stringify({
+    token,
+    expiresAt,
+    refreshToken: refreshToken || null
+  });
   sessionStorage.setItem(DISCORD_STORAGE_KEY, payload);
 }
 
@@ -315,7 +367,7 @@ function readStoredDiscordToken() {
       sessionStorage.removeItem(DISCORD_STORAGE_KEY);
       return null;
     }
-    return parsed.token;
+    return parsed;
   } catch (error) {
     console.warn('No se pudo leer el token de Discord:', error);
     sessionStorage.removeItem(DISCORD_STORAGE_KEY);
@@ -325,26 +377,96 @@ function readStoredDiscordToken() {
 
 function clearDiscordToken() {
   sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+  sessionStorage.removeItem(DISCORD_CODE_VERIFIER_KEY);
 }
 
-function captureTokenFromUrlHash() {
-  if (!window.location.hash.includes('access_token')) return null;
-
-  const hashParams = new URLSearchParams(window.location.hash.slice(1));
-  const accessToken = hashParams.get('access_token');
-  const expiresIn = hashParams.get('expires_in');
-
-  if (accessToken) {
-    storeDiscordToken(accessToken, expiresIn);
+async function exchangeCodeForToken(code) {
+  const verifier = sessionStorage.getItem(DISCORD_CODE_VERIFIER_KEY);
+  if (!verifier) {
+    throw new Error('No se encontró el verificador PKCE. Inicia sesión nuevamente.');
   }
 
+  sessionStorage.removeItem(DISCORD_CODE_VERIFIER_KEY);
+
+  const body = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: DISCORD_REDIRECT_URI,
+    code_verifier: verifier
+  });
+
+  const response = await fetch(DISCORD_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: body.toString()
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Discord rechazó el intercambio de código (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.access_token) {
+    throw new Error('Discord no devolvió un token de acceso válido.');
+  }
+
+  storeDiscordToken(data.access_token, data.expires_in, data.refresh_token);
+  return data.access_token;
+}
+
+function cleanDiscordOAuthParams() {
+  const url = new URL(window.location.href);
+  ['code', 'state', 'error', 'error_description'].forEach((param) => {
+    url.searchParams.delete(param);
+  });
+  const newSearch = url.searchParams.toString();
+  const newUrl = `${url.pathname}${newSearch ? `?${newSearch}` : ''}${url.hash}`;
   if (history.replaceState) {
-    history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+    history.replaceState(null, document.title, newUrl);
   } else {
-    window.location.hash = '';
+    window.location.search = newSearch ? `?${newSearch}` : '';
+  }
+}
+
+async function handleDiscordRedirect() {
+  const url = new URL(window.location.href);
+  const error = url.searchParams.get('error');
+  const errorDescription = url.searchParams.get('error_description');
+  const code = url.searchParams.get('code');
+
+  if (!error && !code) {
+    return null;
   }
 
-  return accessToken;
+  if (error) {
+    const details = decodeURIComponent(errorDescription || error);
+    updateDiscordStatus(`Discord canceló la autorización: ${details}`, 'error');
+    cleanDiscordOAuthParams();
+    clearDiscordToken();
+    return null;
+  }
+
+  if (!code) {
+    cleanDiscordOAuthParams();
+    return null;
+  }
+
+  try {
+    updateDiscordStatus('Validando la autorización de Discord...');
+    const token = await exchangeCodeForToken(code);
+    cleanDiscordOAuthParams();
+    return token;
+  } catch (error) {
+    console.error('Error al procesar el código de Discord:', error);
+    updateDiscordStatus('No se pudo completar la autenticación con Discord. Intenta nuevamente.', 'error');
+    cleanDiscordOAuthParams();
+    clearDiscordToken();
+    return null;
+  }
 }
 
 async function fetchDiscordProfile(token) {
@@ -382,7 +504,7 @@ async function initializeDiscordGate() {
   }
 
   loginButton.addEventListener('click', () => {
-    window.location.href = buildDiscordAuthUrl();
+    beginDiscordLogin();
   });
 
   logoutButton?.addEventListener('click', () => {
@@ -395,9 +517,9 @@ async function initializeDiscordGate() {
     logoutButton?.removeAttribute('disabled');
   });
 
-  captureTokenFromUrlHash();
-
-  const token = readStoredDiscordToken();
+  const redirectedToken = await handleDiscordRedirect();
+  const storedSession = readStoredDiscordToken();
+  const token = redirectedToken || storedSession?.token;
   if (!token) {
     loginButton.disabled = false;
     setCreatorSectionVisible(false);
