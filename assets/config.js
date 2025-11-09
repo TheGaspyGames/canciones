@@ -3,7 +3,7 @@
 
 // Discord OAuth
 window.DISCORD_CLIENT_ID = window.DISCORD_CLIENT_ID || '1405367857109532732';
-window.DISCORD_REDIRECT_URI = window.DISCORD_REDIRECT_URI || 'https://discord.com/oauth2/authorize?client_id=1405367857109532732&response_type=code&redirect_uri=https%3A%2F%2Fthegaspygames.github.io%2Fcanciones&scope=identify';
+window.DISCORD_REDIRECT_URI = window.DISCORD_REDIRECT_URI || 'https://thegaspygames.github.io/canciones';
 window.DISCORD_ALLOWED_USER_ID = window.DISCORD_ALLOWED_USER_ID || '684395420004253729';
 
 // GitHub
