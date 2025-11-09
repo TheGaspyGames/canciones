@@ -29,19 +29,28 @@
   </header>
 
   <main class="container">
-    <section id="creator-tools" class="creator-section">
+    <section id="discordGateBanner" class="discord-gate-banner" aria-live="polite">
+      <div class="discord-gate-text">
+        <h2>Zona privada</h2>
+        <p>Solo <strong>the_gaspy_games</strong> puede subir nuevas canciones. Inicia sesión con Discord para acceder.</p>
+      </div>
+      <div class="discord-banner-actions">
+        <button id="discordLoginButton" class="discord-login-button" type="button">
+          <span aria-hidden="true">🪪</span>
+          Conectar con Discord
+        </button>
+        <p id="discordBannerStatus" class="discord-status"></p>
+      </div>
+    </section>
+
+    <section id="creator-tools" class="creator-section hidden" aria-hidden="true">
       <div id="discordAuthCard" class="discord-auth-card">
         <h2>Panel privado</h2>
         <p class="description">
-          Conéctate con Discord para demostrar que eres <strong>the_gaspy_games</strong>. Solo entonces podrás gestionar y subir
-          nuevas canciones directamente desde esta página.
+          Has iniciado sesión con Discord. Desde aquí puedes subir nuevas canciones directamente al repositorio.
         </p>
         <div class="discord-auth-actions">
-          <button id="discordLoginButton" class="discord-login-button" type="button">
-            <span aria-hidden="true">🪪</span>
-            Conectar con Discord
-          </button>
-          <button id="discordLogoutButton" class="discord-logout-button hidden" type="button">
+          <button id="discordLogoutButton" class="discord-logout-button" type="button">
             Cerrar sesión
           </button>
         </div>

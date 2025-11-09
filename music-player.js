@@ -207,14 +207,34 @@ function populateSelectOptions(select, values, defaultLabel) {
 }
 
 function updateDiscordStatus(message, type = '') {
-  const statusElement = document.getElementById('discordStatus');
-  if (!statusElement) return;
+  const statusElements = [
+    document.getElementById('discordStatus'),
+    document.getElementById('discordBannerStatus')
+  ].filter(Boolean);
 
-  statusElement.textContent = message;
-  statusElement.classList.remove('error', 'success');
-  if (type) {
-    statusElement.classList.add(type);
-  }
+  statusElements.forEach((element) => {
+    element.textContent = message;
+    element.classList.remove('error', 'success');
+    if (type) {
+      element.classList.add(type);
+    }
+  });
+}
+
+function setCreatorSectionVisible(isVisible) {
+  const creatorSection = document.getElementById('creator-tools');
+  if (!creatorSection) return;
+
+  creatorSection.classList.toggle('hidden', !isVisible);
+  creatorSection.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+}
+
+function setLoginBannerVisible(isVisible) {
+  const banner = document.getElementById('discordGateBanner');
+  if (!banner) return;
+
+  banner.classList.toggle('hidden', !isVisible);
+  banner.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
 }
 
 function formatDiscordDisplayName(profile) {
@@ -347,6 +367,8 @@ async function initializeDiscordGate() {
   const logoutButton = document.getElementById('discordLogoutButton');
   const configCheck = isDiscordOAuthConfigured();
 
+  setCreatorSectionVisible(false);
+  setLoginBannerVisible(true);
   toggleUploadVisibility(false);
   updateDiscordStatus('Conéctate con Discord para acceder al panel privado.');
 
@@ -354,9 +376,7 @@ async function initializeDiscordGate() {
 
   if (!configCheck.valid) {
     loginButton.disabled = true;
-    if (logoutButton) {
-      logoutButton.disabled = true;
-    }
+    logoutButton?.setAttribute('disabled', 'true');
     updateDiscordStatus(configCheck.reason, 'error');
     return;
   }
@@ -367,11 +387,12 @@ async function initializeDiscordGate() {
 
   logoutButton?.addEventListener('click', () => {
     clearDiscordToken();
+    setCreatorSectionVisible(false);
+    setLoginBannerVisible(true);
     toggleUploadVisibility(false);
     updateDiscordStatus('Sesión cerrada. Conéctate nuevamente para subir canciones.');
-    loginButton.classList.remove('hidden');
     loginButton.disabled = false;
-    logoutButton.classList.add('hidden');
+    logoutButton?.removeAttribute('disabled');
   });
 
   captureTokenFromUrlHash();
@@ -379,8 +400,8 @@ async function initializeDiscordGate() {
   const token = readStoredDiscordToken();
   if (!token) {
     loginButton.disabled = false;
-    loginButton.classList.remove('hidden');
-    logoutButton?.classList.add('hidden');
+    setCreatorSectionVisible(false);
+    setLoginBannerVisible(true);
     return;
   }
 
@@ -395,17 +416,15 @@ async function initializeDiscordGate() {
       );
       clearDiscordToken();
       loginButton.disabled = false;
-      loginButton.classList.remove('hidden');
-      logoutButton?.classList.add('hidden');
+      setCreatorSectionVisible(false);
+      setLoginBannerVisible(true);
       return;
     }
 
-    loginButton.classList.add('hidden');
     loginButton.disabled = true;
-    if (logoutButton) {
-      logoutButton.classList.remove('hidden');
-      logoutButton.disabled = false;
-    }
+    setLoginBannerVisible(false);
+    setCreatorSectionVisible(true);
+    logoutButton?.removeAttribute('disabled');
 
     const githubCheck = isGitHubConfigured();
     if (!githubCheck.valid) {
@@ -424,8 +443,8 @@ async function initializeDiscordGate() {
     updateDiscordStatus('No se pudo verificar tu cuenta de Discord. Intenta nuevamente.', 'error');
     clearDiscordToken();
     loginButton.disabled = false;
-    loginButton.classList.remove('hidden');
-    logoutButton?.classList.add('hidden');
+    setCreatorSectionVisible(false);
+    setLoginBannerVisible(true);
   }
 }
 
