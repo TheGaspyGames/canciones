@@ -1,6 +1,17 @@
 {
   "songs": [
     {
+      "id": "836495c5-ddd0-46ec-b493-167fdcb09f77",
+      "title": "La mierda de Kasuitz y los trials",
+      "file": "music/la-mierda-de-kasuitz-y-los-trials-1762720667336.mp3",
+      "cover": "assets/default-cover.png",
+      "date": "2025-11-09",
+      "size": 10133343,
+      "genre": "Trap Metal / Rap-Rock oscuro, agresivo y cinematográfico. Distorsión pesada, bajo 808 profundo, guitarras eléctricas con delay corto, percusión híbrida (808 + batería real), sintetizadores industriales con build-ups progresivos y coros “gang” en clímax.",
+      "aiModel": "Suno v4.5-ALL",
+      "downloadName": "la-mierda-de-kasuitz-y-los-trials-1762720667336.mp3"
+    },
+    {
       "id": "a64b581f",
       "title": "(sonido eléctrico, truenos, distorsión) (1)",
       "file": "music/(sonido eléctrico, truenos, distorsión) (1).mp3",
