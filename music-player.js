@@ -580,6 +580,7 @@ function setupUploadForm() {
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Documento cargado, iniciando carga de canciones...');
   initializePlayerElements();
+  initializeDiscordGate();
   setupUploadForm();
   loadSongs();
 });

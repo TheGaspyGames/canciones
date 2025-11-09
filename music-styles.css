@@ -215,6 +215,79 @@ select {
   backdrop-filter: blur(8px);
 }
 
+.discord-auth-card h2 {
+  font-size: 2rem;
+  margin-bottom: 0.6rem;
+}
+
+.discord-auth-card .description {
+  color: #a5b4fc;
+  margin-bottom: 1.4rem;
+}
+
+.discord-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.discord-login-button,
+.discord-logout-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.6rem;
+  border-radius: 999px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.discord-login-button {
+  background: linear-gradient(135deg, #5865f2, #7289da);
+  color: white;
+}
+
+.discord-login-button:disabled,
+.discord-logout-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+  transform: none;
+}
+
+.discord-login-button:hover,
+.discord-logout-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(88, 101, 242, 0.25);
+}
+
+.discord-logout-button {
+  background: rgba(226, 232, 240, 0.1);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.discord-status {
+  margin-top: 1rem;
+  color: #cbd5f5;
+  min-height: 1.4rem;
+}
+
+.discord-status.error {
+  color: #fca5a5;
+}
+
+.discord-status.success {
+  color: #86efac;
+}
+
+.upload-section {
+  margin-bottom: 0;
+}
+
 .upload-section h2 {
   margin-top: 0;
   font-size: 2rem;
