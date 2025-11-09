@@ -1,5 +1,20 @@
 // Variables globales
 const DEFAULT_COVER = 'assets/default-cover.png';
+const DISCORD_ALLOWED_USER_ID = window.DISCORD_ALLOWED_USER_ID || '684395420004253729';
+const DISCORD_CLIENT_ID = window.DISCORD_CLIENT_ID || 'REEMPLAZA_CON_TU_CLIENT_ID';
+const DISCORD_SCOPE = 'identify';
+const DISCORD_STORAGE_KEY = 'discordAccessToken';
+const DISCORD_REDIRECT_URI =
+  window.DISCORD_REDIRECT_URI || `${window.location.origin}${window.location.pathname}`;
+
+const GITHUB_OWNER = window.GITHUB_OWNER || 'thegaspygames';
+const GITHUB_REPO = window.GITHUB_REPO || 'canciones';
+const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
+const GITHUB_SONGS_PATH = window.GITHUB_SONGS_PATH || 'songs.json';
+const GITHUB_MUSIC_DIR = window.GITHUB_MUSIC_DIR || 'music';
+const GITHUB_COVER_DIR = window.GITHUB_COVER_DIR || 'assets/covers';
+const GITHUB_API_BASE = 'https://api.github.com';
+
 let songs = [];
 let currentPage = 1;
 const songsPerPage = 24;
@@ -17,6 +32,155 @@ function formatFileSize(bytes) {
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function slugify(value) {
+  return value
+    .normalize('NFD')
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/[\s_-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .toLowerCase();
+}
+
+function extractExtension(fileName, fallback = '') {
+  const match = /\.([^.]+)$/.exec(fileName || '');
+  return match ? match[1].toLowerCase() : fallback;
+}
+
+function uint8ArrayToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
+function arrayBufferToBase64(buffer) {
+  return uint8ArrayToBase64(new Uint8Array(buffer));
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(arrayBufferToBase64(reader.result));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function encodeStringToBase64(value) {
+  if (typeof TextEncoder !== 'undefined') {
+    const encoder = new TextEncoder();
+    return uint8ArrayToBase64(encoder.encode(value));
+  }
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function decodeBase64ToString(base64Value) {
+  const binary = atob(base64Value);
+  if (typeof TextDecoder !== 'undefined') {
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  return decodeURIComponent(escape(binary));
+}
+
+function buildRawGitHubUrl(path) {
+  return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${path}`;
+}
+
+function isGitHubConfigured() {
+  if (
+    !GITHUB_OWNER ||
+    !GITHUB_REPO ||
+    !GITHUB_BRANCH ||
+    !GITHUB_SONGS_PATH ||
+    !GITHUB_MUSIC_DIR ||
+    !GITHUB_COVER_DIR
+  ) {
+    return {
+      valid: false,
+      reason: 'Configura los datos de GitHub en assets/config.js para habilitar las subidas seguras.'
+    };
+  }
+  return { valid: true };
+}
+
+async function githubRequest(path, { method = 'GET', token, body } = {}) {
+  const headers = {
+    Accept: 'application/vnd.github+json'
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(`${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  if (!response.ok) {
+    let details = '';
+    try {
+      const errorPayload = await response.json();
+      details = errorPayload?.message ? `: ${errorPayload.message}` : '';
+    } catch (parseError) {
+      details = `: ${response.statusText}`;
+    }
+    throw new Error(`GitHub respondió ${response.status}${details}`);
+  }
+
+  return response.json();
+}
+
+async function fetchGitHubFile(path, token) {
+  return githubRequest(`${path}?ref=${encodeURIComponent(GITHUB_BRANCH)}`, { token });
+}
+
+async function putGitHubFile(path, base64Content, token, message, sha) {
+  const body = {
+    message,
+    content: base64Content,
+    branch: GITHUB_BRANCH
+  };
+
+  if (sha) {
+    body.sha = sha;
+  }
+
+  return githubRequest(path, {
+    method: 'PUT',
+    token,
+    body
+  });
+}
+
+async function fetchGitHubJson(path, token) {
+  const payload = await fetchGitHubFile(path, token);
+  const decoded = decodeBase64ToString(payload.content);
+  return {
+    sha: payload.sha,
+    json: JSON.parse(decoded)
+  };
 }
 
 function populateSelectOptions(select, values, defaultLabel) {
@@ -39,6 +203,229 @@ function populateSelectOptions(select, values, defaultLabel) {
 
   if (values.includes(previousValue)) {
     select.value = previousValue;
+  }
+}
+
+function updateDiscordStatus(message, type = '') {
+  const statusElement = document.getElementById('discordStatus');
+  if (!statusElement) return;
+
+  statusElement.textContent = message;
+  statusElement.classList.remove('error', 'success');
+  if (type) {
+    statusElement.classList.add(type);
+  }
+}
+
+function formatDiscordDisplayName(profile) {
+  if (!profile) return 'usuario';
+  if (profile.global_name) return profile.global_name;
+  if (profile.discriminator && profile.discriminator !== '0') {
+    return `${profile.username}#${profile.discriminator}`;
+  }
+  return profile.username || 'usuario';
+}
+
+function toggleUploadVisibility(isVisible) {
+  const uploadWrapper = document.getElementById('uploadWrapper');
+  if (!uploadWrapper) return;
+
+  uploadWrapper.classList.toggle('hidden', !isVisible);
+  uploadWrapper.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+  setUploadFormEnabled(isVisible);
+}
+
+function setUploadFormEnabled(isEnabled) {
+  const uploadForm = document.getElementById('uploadForm');
+  if (!uploadForm) return;
+
+  uploadForm
+    .querySelectorAll('input, button, select, textarea')
+    .forEach((element) => {
+      element.disabled = !isEnabled;
+    });
+}
+
+function isDiscordOAuthConfigured() {
+  if (!DISCORD_CLIENT_ID || DISCORD_CLIENT_ID === 'REEMPLAZA_CON_TU_CLIENT_ID') {
+    return { valid: false, reason: 'Configura tu CLIENT ID de Discord en music-player.js.' };
+  }
+
+  if (
+    !DISCORD_REDIRECT_URI ||
+    DISCORD_REDIRECT_URI.startsWith('file://') ||
+    DISCORD_REDIRECT_URI === 'null' ||
+    DISCORD_REDIRECT_URI === 'undefined'
+  ) {
+    return {
+      valid: false,
+      reason: 'Debes alojar la página con HTTPS y definir un redirect URI autorizado para Discord.'
+    };
+  }
+
+  return { valid: true };
+}
+
+function buildDiscordAuthUrl() {
+  const params = new URLSearchParams({
+    response_type: 'token',
+    client_id: DISCORD_CLIENT_ID,
+    scope: DISCORD_SCOPE,
+    redirect_uri: DISCORD_REDIRECT_URI,
+    prompt: 'consent'
+  });
+  return `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+}
+
+function storeDiscordToken(token, expiresInSeconds) {
+  if (!token) return;
+  const expiresAt = Date.now() + (Number(expiresInSeconds) || 3600) * 1000;
+  const payload = JSON.stringify({ token, expiresAt });
+  sessionStorage.setItem(DISCORD_STORAGE_KEY, payload);
+}
+
+function readStoredDiscordToken() {
+  const raw = sessionStorage.getItem(DISCORD_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed.token || !parsed.expiresAt) return null;
+    if (Date.now() >= parsed.expiresAt) {
+      sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+      return null;
+    }
+    return parsed.token;
+  } catch (error) {
+    console.warn('No se pudo leer el token de Discord:', error);
+    sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+    return null;
+  }
+}
+
+function clearDiscordToken() {
+  sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+}
+
+function captureTokenFromUrlHash() {
+  if (!window.location.hash.includes('access_token')) return null;
+
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = hashParams.get('access_token');
+  const expiresIn = hashParams.get('expires_in');
+
+  if (accessToken) {
+    storeDiscordToken(accessToken, expiresIn);
+  }
+
+  if (history.replaceState) {
+    history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+  } else {
+    window.location.hash = '';
+  }
+
+  return accessToken;
+}
+
+async function fetchDiscordProfile(token) {
+  const response = await fetch('https://discord.com/api/users/@me', {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Discord respondió ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+}
+
+async function initializeDiscordGate() {
+  const loginButton = document.getElementById('discordLoginButton');
+  const logoutButton = document.getElementById('discordLogoutButton');
+  const configCheck = isDiscordOAuthConfigured();
+
+  toggleUploadVisibility(false);
+  updateDiscordStatus('Conéctate con Discord para acceder al panel privado.');
+
+  if (!loginButton) return;
+
+  if (!configCheck.valid) {
+    loginButton.disabled = true;
+    if (logoutButton) {
+      logoutButton.disabled = true;
+    }
+    updateDiscordStatus(configCheck.reason, 'error');
+    return;
+  }
+
+  loginButton.addEventListener('click', () => {
+    window.location.href = buildDiscordAuthUrl();
+  });
+
+  logoutButton?.addEventListener('click', () => {
+    clearDiscordToken();
+    toggleUploadVisibility(false);
+    updateDiscordStatus('Sesión cerrada. Conéctate nuevamente para subir canciones.');
+    loginButton.classList.remove('hidden');
+    loginButton.disabled = false;
+    logoutButton.classList.add('hidden');
+  });
+
+  captureTokenFromUrlHash();
+
+  const token = readStoredDiscordToken();
+  if (!token) {
+    loginButton.disabled = false;
+    loginButton.classList.remove('hidden');
+    logoutButton?.classList.add('hidden');
+    return;
+  }
+
+  try {
+    updateDiscordStatus('Verificando tu cuenta de Discord...');
+    const profile = await fetchDiscordProfile(token);
+
+    if (profile.id !== DISCORD_ALLOWED_USER_ID) {
+      updateDiscordStatus(
+        'Esta cuenta de Discord no coincide con la autorizada para administrar las canciones.',
+        'error'
+      );
+      clearDiscordToken();
+      loginButton.disabled = false;
+      loginButton.classList.remove('hidden');
+      logoutButton?.classList.add('hidden');
+      return;
+    }
+
+    loginButton.classList.add('hidden');
+    loginButton.disabled = true;
+    if (logoutButton) {
+      logoutButton.classList.remove('hidden');
+      logoutButton.disabled = false;
+    }
+
+    const githubCheck = isGitHubConfigured();
+    if (!githubCheck.valid) {
+      toggleUploadVisibility(false);
+      updateDiscordStatus(
+        `Acceso concedido, pero ${githubCheck.reason}`,
+        'error'
+      );
+      return;
+    }
+
+    toggleUploadVisibility(true);
+    updateDiscordStatus(`Acceso concedido. Bienvenido, ${formatDiscordDisplayName(profile)}.`, 'success');
+  } catch (error) {
+    console.error('Error al validar el token de Discord:', error);
+    updateDiscordStatus('No se pudo verificar tu cuenta de Discord. Intenta nuevamente.', 'error');
+    clearDiscordToken();
+    loginButton.disabled = false;
+    loginButton.classList.remove('hidden');
+    logoutButton?.classList.add('hidden');
   }
 }
 
@@ -71,15 +458,6 @@ function showUploadStatus(message, status = '') {
   if (status) {
     statusElement.classList.add(status);
   }
-}
-
-function fileToDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(file);
-  });
 }
 
 function formatTitleFromFileName(fileName) {
@@ -513,6 +891,77 @@ function playSongAtIndex(index) {
   }
 }
 
+async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, token, commitMessage }) {
+  const sanitizedTitle = title || formatTitleFromFileName(file.name) || 'Canción AI';
+  const baseSlug = slugify(sanitizedTitle) || 'cancion-ai';
+  const uniqueSuffix = Date.now();
+  const audioExtension = extractExtension(file.name, 'mp3');
+  const baseFileName = `${baseSlug}-${uniqueSuffix}`;
+  const audioRepoPath = `${GITHUB_MUSIC_DIR}/${baseFileName}.${audioExtension}`;
+
+  const audioBase64 = await readFileAsBase64(file);
+  const audioMessage = commitMessage || `Añadir canción ${sanitizedTitle}`;
+  await putGitHubFile(audioRepoPath, audioBase64, token, audioMessage);
+
+  let coverRepoPath = '';
+  if (coverFile) {
+    const coverExtension = extractExtension(coverFile.name, 'png');
+    coverRepoPath = `${GITHUB_COVER_DIR}/${baseFileName}.${coverExtension}`;
+    const coverBase64 = await readFileAsBase64(coverFile);
+    const coverMessage = commitMessage
+      ? `${commitMessage} (portada)`
+      : `Añadir portada para ${sanitizedTitle}`;
+    await putGitHubFile(coverRepoPath, coverBase64, token, coverMessage);
+  }
+
+  let songsData;
+  try {
+    songsData = await fetchGitHubJson(GITHUB_SONGS_PATH, token);
+  } catch (error) {
+    throw new Error(`No se pudo leer ${GITHUB_SONGS_PATH} en GitHub. ${error.message}`);
+  }
+
+  if (!Array.isArray(songsData.json.songs)) {
+    songsData.json.songs = [];
+  }
+
+  const newSongEntry = {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `song-${uniqueSuffix}`,
+    title: sanitizedTitle,
+    file: audioRepoPath,
+    cover: coverRepoPath || DEFAULT_COVER,
+    date: new Date().toISOString().slice(0, 10),
+    size: file.size,
+    genre,
+    aiModel,
+    downloadName: `${baseFileName}.${audioExtension}`
+  };
+
+  songsData.json.songs = songsData.json.songs.filter((song) => song.file !== audioRepoPath);
+  songsData.json.songs.unshift(newSongEntry);
+  const updatedContent = `${JSON.stringify(songsData.json, null, 2)}\n`;
+  const songsMessage = commitMessage
+    ? `${commitMessage} (actualizar songs.json)`
+    : `Actualizar songs.json con ${sanitizedTitle}`;
+
+  await putGitHubFile(
+    GITHUB_SONGS_PATH,
+    encodeStringToBase64(updatedContent),
+    token,
+    songsMessage,
+    songsData.sha
+  );
+
+  return {
+    repoSong: newSongEntry,
+    clientSong: {
+      ...newSongEntry,
+      file: buildRawGitHubUrl(audioRepoPath),
+      cover: coverRepoPath ? buildRawGitHubUrl(coverRepoPath) : DEFAULT_COVER
+    }
+  };
+}
+
 function setupUploadForm() {
   const uploadForm = document.getElementById('uploadForm');
   if (!uploadForm) return;
@@ -522,6 +971,8 @@ function setupUploadForm() {
   const genreInput = document.getElementById('songGenre');
   const modelInput = document.getElementById('songModel');
   const coverInput = document.getElementById('coverFile');
+  const tokenInput = document.getElementById('githubToken');
+  const commitMessageInput = document.getElementById('commitMessage');
 
   fileInput?.addEventListener('change', () => {
     if (fileInput.files?.length) {
@@ -541,38 +992,54 @@ function setupUploadForm() {
       return;
     }
 
-    showUploadStatus('Procesando canción...');
+    const githubCheck = isGitHubConfigured();
+    if (!githubCheck.valid) {
+      showUploadStatus(githubCheck.reason, 'error');
+      return;
+    }
+
+    const token = tokenInput?.value.trim();
+    if (!token) {
+      showUploadStatus('Ingresa tu token personal de GitHub para continuar.', 'error');
+      return;
+    }
+
+    showUploadStatus('Subiendo canción al repositorio... Esto puede tardar unos segundos.');
+    setUploadFormEnabled(false);
 
     try {
       const coverFile = coverInput?.files?.[0];
-      const coverUrl = coverFile ? await fileToDataURL(coverFile) : DEFAULT_COVER;
       const title = titleInput?.value.trim() || formatTitleFromFileName(file.name) || file.name;
       const genre = genreInput?.value.trim() || 'Sin género';
       const aiModel = modelInput?.value.trim() || 'Personal';
+      const commitMessage = commitMessageInput?.value.trim() || '';
 
-      const newSong = {
-        id: `local-${Date.now()}`,
+      const { clientSong, repoSong } = await uploadSongToGitHub({
+        file,
+        coverFile,
         title,
-        file: URL.createObjectURL(file),
-        cover: coverUrl,
-        date: new Date().toISOString().slice(0, 10),
-        size: file.size,
         genre,
         aiModel,
-        isLocal: true,
-        downloadName: file.name
-      };
+        token,
+        commitMessage
+      });
 
-      songs.unshift(newSong);
+      songs = songs.filter((song) => song.id !== clientSong.id);
+      songs.unshift(clientSong);
       currentSongIndex = 0;
       refreshInterface({ resetPage: true });
 
-      showUploadStatus('Canción subida correctamente. ¡A disfrutar!', 'success');
+      showUploadStatus('Canción subida y guardada en GitHub correctamente. ¡Listo!', 'success');
       uploadForm.reset();
+      if (tokenInput) {
+        tokenInput.value = '';
+      }
+      console.info('Canción añadida al repositorio:', repoSong);
     } catch (error) {
-      console.error('Error al cargar la canción local:', error);
-      showUploadStatus('No se pudo cargar la canción. Intenta nuevamente.', 'error');
+      console.error('Error al subir la canción al repositorio:', error);
+      showUploadStatus(error.message || 'No se pudo subir la canción. Intenta nuevamente.', 'error');
     }
+    setUploadFormEnabled(true);
   });
 }
 
