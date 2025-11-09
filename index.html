@@ -29,6 +29,94 @@
   </header>
 
   <main class="container">
+    <section id="discordGateBanner" class="discord-gate-banner" aria-live="polite">
+      <div class="discord-gate-text">
+        <h2>Zona privada</h2>
+        <p>Solo <strong>the_gaspy_games</strong> puede subir nuevas canciones. Inicia sesión con Discord para acceder.</p>
+      </div>
+      <div class="discord-banner-actions">
+        <button id="discordLoginButton" class="discord-login-button" type="button">
+          <span aria-hidden="true">🪪</span>
+          Conectar con Discord
+        </button>
+        <p id="discordBannerStatus" class="discord-status"></p>
+      </div>
+    </section>
+
+    <section id="creator-tools" class="creator-section hidden" aria-hidden="true">
+      <div id="discordAuthCard" class="discord-auth-card">
+        <h2>Panel privado</h2>
+        <p class="description">
+          Has iniciado sesión con Discord. Desde aquí puedes subir nuevas canciones directamente al repositorio.
+        </p>
+        <div class="discord-auth-actions">
+          <button id="discordLogoutButton" class="discord-logout-button" type="button">
+            Cerrar sesión
+          </button>
+        </div>
+        <p id="discordStatus" class="discord-status" aria-live="polite"></p>
+      </div>
+
+      <div id="uploadWrapper" class="upload-section hidden" aria-hidden="true">
+        <h2>Sube tu Música</h2>
+        <p class="description">
+          Agrega tus propias canciones sin necesidad de copiarlas manualmente a la carpeta del proyecto. Elige un archivo de audio
+          y completa los datos opcionales para verlo inmediatamente en la galería y en la playlist.
+        </p>
+
+        <form id="uploadForm" class="upload-form">
+          <div class="form-warning" role="note">
+            <strong>Importante:</strong> La canción y (opcionalmente) la portada se subirán directamente al repositorio de
+            GitHub configurado. Necesitas un token personal con el alcance <code>public_repo</code> o <code>repo</code>.
+            El token solo se usa durante la subida y nunca se guarda.
+          </div>
+
+          <div class="form-row">
+            <label for="songFile">Archivo de audio (MP3, WAV, OGG)</label>
+            <input type="file" id="songFile" name="songFile" accept="audio/*" required>
+          </div>
+
+          <div class="form-row">
+            <label for="songTitle">Título</label>
+            <input type="text" id="songTitle" name="songTitle" placeholder="Ej: Mi nueva canción AI">
+          </div>
+
+          <div class="form-row two-columns">
+            <div>
+              <label for="songGenre">Género</label>
+              <input type="text" id="songGenre" name="songGenre" placeholder="Ej: Synthwave">
+            </div>
+            <div>
+              <label for="songModel">Modelo de IA</label>
+              <input type="text" id="songModel" name="songModel" placeholder="Ej: Suno v3">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="coverFile">Portada (opcional)</label>
+            <input type="file" id="coverFile" name="coverFile" accept="image/*">
+          </div>
+
+          <div class="form-row">
+            <label for="githubToken">Token personal de GitHub</label>
+            <input type="password" id="githubToken" name="githubToken"
+                   placeholder="ghp_... (no se almacena)">
+          </div>
+
+          <div class="form-row">
+            <label for="commitMessage">Mensaje de commit (opcional)</label>
+            <input type="text" id="commitMessage" name="commitMessage"
+                   placeholder="Ej: Añadir nueva canción generada con IA">
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="upload-button">Subir canción</button>
+            <span id="uploadStatus" class="upload-status" aria-live="polite"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <section id="music-gallery">
       <h2>Mi Musica Generada con IA</h2>
       <p class="description">Explora mi colección de música creada utilizando inteligencia artificial. Cada pieza es única y generada mediante diversos modelos de IA.</p>
@@ -97,6 +185,7 @@
     </div>
   </footer>
 
+  <script src="assets/config.js"></script>
   <script src="music-player.js"></script>
 </body>
 </html>
