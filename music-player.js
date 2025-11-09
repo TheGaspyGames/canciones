@@ -1,4 +1,12 @@
 // Variables globales
+const DEFAULT_COVER = 'assets/default-cover.png';
+const DISCORD_ALLOWED_USER_ID = window.DISCORD_ALLOWED_USER_ID || '684395420004253729';
+const DISCORD_CLIENT_ID = window.DISCORD_CLIENT_ID || 'REEMPLAZA_CON_TU_CLIENT_ID';
+const DISCORD_SCOPE = 'identify';
+const DISCORD_STORAGE_KEY = 'discordAccessToken';
+const DISCORD_REDIRECT_URI =
+  window.DISCORD_REDIRECT_URI || `${window.location.origin}${window.location.pathname}`;
+
 let songs = [];
 let currentPage = 1;
 const songsPerPage = 24;
@@ -16,6 +24,284 @@ function formatFileSize(bytes) {
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function populateSelectOptions(select, values, defaultLabel) {
+  if (!select) return;
+
+  const previousValue = select.value;
+  select.innerHTML = '';
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = 'all';
+  defaultOption.textContent = defaultLabel;
+  select.appendChild(defaultOption);
+
+  values.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+
+  if (values.includes(previousValue)) {
+    select.value = previousValue;
+  }
+}
+
+function updateDiscordStatus(message, type = '') {
+  const statusElement = document.getElementById('discordStatus');
+  if (!statusElement) return;
+
+  statusElement.textContent = message;
+  statusElement.classList.remove('error', 'success');
+  if (type) {
+    statusElement.classList.add(type);
+  }
+}
+
+function toggleUploadVisibility(isVisible) {
+  const uploadWrapper = document.getElementById('uploadWrapper');
+  if (!uploadWrapper) return;
+
+  uploadWrapper.classList.toggle('hidden', !isVisible);
+  uploadWrapper.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+  setUploadFormEnabled(isVisible);
+}
+
+function setUploadFormEnabled(isEnabled) {
+  const uploadForm = document.getElementById('uploadForm');
+  if (!uploadForm) return;
+
+  uploadForm
+    .querySelectorAll('input, button, select, textarea')
+    .forEach((element) => {
+      element.disabled = !isEnabled;
+    });
+}
+
+function isDiscordOAuthConfigured() {
+  if (!DISCORD_CLIENT_ID || DISCORD_CLIENT_ID === 'REEMPLAZA_CON_TU_CLIENT_ID') {
+    return { valid: false, reason: 'Configura tu CLIENT ID de Discord en music-player.js.' };
+  }
+
+  if (
+    !DISCORD_REDIRECT_URI ||
+    DISCORD_REDIRECT_URI.startsWith('file://') ||
+    DISCORD_REDIRECT_URI === 'null' ||
+    DISCORD_REDIRECT_URI === 'undefined'
+  ) {
+    return {
+      valid: false,
+      reason: 'Debes alojar la página con HTTPS y definir un redirect URI autorizado para Discord.'
+    };
+  }
+
+  return { valid: true };
+}
+
+function buildDiscordAuthUrl() {
+  const params = new URLSearchParams({
+    response_type: 'token',
+    client_id: DISCORD_CLIENT_ID,
+    scope: DISCORD_SCOPE,
+    redirect_uri: DISCORD_REDIRECT_URI,
+    prompt: 'consent'
+  });
+  return `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+}
+
+function storeDiscordToken(token, expiresInSeconds) {
+  if (!token) return;
+  const expiresAt = Date.now() + (Number(expiresInSeconds) || 3600) * 1000;
+  const payload = JSON.stringify({ token, expiresAt });
+  sessionStorage.setItem(DISCORD_STORAGE_KEY, payload);
+}
+
+function readStoredDiscordToken() {
+  const raw = sessionStorage.getItem(DISCORD_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed.token || !parsed.expiresAt) return null;
+    if (Date.now() >= parsed.expiresAt) {
+      sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+      return null;
+    }
+    return parsed.token;
+  } catch (error) {
+    console.warn('No se pudo leer el token de Discord:', error);
+    sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+    return null;
+  }
+}
+
+function clearDiscordToken() {
+  sessionStorage.removeItem(DISCORD_STORAGE_KEY);
+}
+
+function captureTokenFromUrlHash() {
+  if (!window.location.hash.includes('access_token')) return null;
+
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = hashParams.get('access_token');
+  const expiresIn = hashParams.get('expires_in');
+
+  if (accessToken) {
+    storeDiscordToken(accessToken, expiresIn);
+  }
+
+  if (history.replaceState) {
+    history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`);
+  } else {
+    window.location.hash = '';
+  }
+
+  return accessToken;
+}
+
+async function fetchDiscordProfile(token) {
+  const response = await fetch('https://discord.com/api/users/@me', {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Discord respondió ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+}
+
+async function initializeDiscordGate() {
+  const loginButton = document.getElementById('discordLoginButton');
+  const logoutButton = document.getElementById('discordLogoutButton');
+  const configCheck = isDiscordOAuthConfigured();
+
+  toggleUploadVisibility(false);
+  updateDiscordStatus('Conéctate con Discord para acceder al panel privado.');
+
+  if (!loginButton) return;
+
+  if (!configCheck.valid) {
+    loginButton.disabled = true;
+    if (logoutButton) {
+      logoutButton.disabled = true;
+    }
+    updateDiscordStatus(configCheck.reason, 'error');
+    return;
+  }
+
+  loginButton.addEventListener('click', () => {
+    window.location.href = buildDiscordAuthUrl();
+  });
+
+  logoutButton?.addEventListener('click', () => {
+    clearDiscordToken();
+    toggleUploadVisibility(false);
+    updateDiscordStatus('Sesión cerrada. Conéctate nuevamente para subir canciones.');
+    loginButton.classList.remove('hidden');
+    loginButton.disabled = false;
+    logoutButton.classList.add('hidden');
+  });
+
+  captureTokenFromUrlHash();
+
+  const token = readStoredDiscordToken();
+  if (!token) {
+    loginButton.disabled = false;
+    loginButton.classList.remove('hidden');
+    logoutButton?.classList.add('hidden');
+    return;
+  }
+
+  try {
+    updateDiscordStatus('Verificando tu cuenta de Discord...');
+    const profile = await fetchDiscordProfile(token);
+
+    if (profile.id !== DISCORD_ALLOWED_USER_ID) {
+      updateDiscordStatus(
+        'Esta cuenta de Discord no coincide con la autorizada para administrar las canciones.',
+        'error'
+      );
+      clearDiscordToken();
+      loginButton.disabled = false;
+      loginButton.classList.remove('hidden');
+      logoutButton?.classList.add('hidden');
+      return;
+    }
+
+    toggleUploadVisibility(true);
+    loginButton.classList.add('hidden');
+    loginButton.disabled = true;
+    if (logoutButton) {
+      logoutButton.classList.remove('hidden');
+      logoutButton.disabled = false;
+    }
+
+    updateDiscordStatus(
+      `Acceso concedido. Bienvenido, ${profile.username}#${profile.discriminator}.`,
+      'success'
+    );
+  } catch (error) {
+    console.error('Error al validar el token de Discord:', error);
+    updateDiscordStatus('No se pudo verificar tu cuenta de Discord. Intenta nuevamente.', 'error');
+    clearDiscordToken();
+    loginButton.disabled = false;
+    loginButton.classList.remove('hidden');
+    logoutButton?.classList.add('hidden');
+  }
+}
+
+function updateFilters() {
+  const genreSelect = document.getElementById('genre-filter');
+  const modelSelect = document.getElementById('model-filter');
+
+  const genres = Array.from(new Set(
+    songs
+      .map((song) => song.genre)
+      .filter((genre) => typeof genre === 'string' && genre.trim() !== '')
+  )).sort((a, b) => a.localeCompare(b, 'es'));
+
+  const models = Array.from(new Set(
+    songs
+      .map((song) => song.aiModel)
+      .filter((model) => typeof model === 'string' && model.trim() !== '')
+  )).sort((a, b) => a.localeCompare(b, 'es'));
+
+  populateSelectOptions(genreSelect, genres, 'Todos los géneros');
+  populateSelectOptions(modelSelect, models, 'Todos los modelos');
+}
+
+function showUploadStatus(message, status = '') {
+  const statusElement = document.getElementById('uploadStatus');
+  if (!statusElement) return;
+
+  statusElement.textContent = message;
+  statusElement.classList.remove('error', 'success');
+  if (status) {
+    statusElement.classList.add(status);
+  }
+}
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatTitleFromFileName(fileName) {
+  return fileName
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Inicializar variables del reproductor
@@ -87,18 +373,8 @@ async function loadSongs() {
     console.log('Datos cargados:', data);
     songs = data.songs;
     console.log('Canciones guardadas:', songs.length);
-    
-    // Inicializar partes del reproductor ahora que `songs` está cargado
-    updatePagination();
-    generateMusicCards();
-    
-    // Inicializar la playlist y cargar la canción actual solo si hay canciones
-    if (songs.length > 0) {
-      initializePlaylist();
-      loadCurrentSong();
-    } else {
-      console.warn('No hay canciones en la lista después de cargar songs.json');
-    }
+
+    refreshInterface({ resetPage: true });
   } catch (error) {
     console.error('Error cargando las canciones:', error);
     document.querySelector('.music-grid').innerHTML = `
@@ -113,9 +389,12 @@ async function loadSongs() {
 // Filtros y búsqueda
 function filterSongs(searchTerm = '', genre = 'all', model = 'all') {
   return songs.filter(song => {
-    const matchesSearch = song.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesGenre = genre === 'all' || song.genre === genre;
-    const matchesModel = model === 'all' || song.aiModel === model;
+    const title = song.title || '';
+    const songGenre = song.genre || '';
+    const songModel = song.aiModel || '';
+    const matchesSearch = title.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesGenre = genre === 'all' || songGenre === genre;
+    const matchesModel = model === 'all' || songModel === model;
     return matchesSearch && matchesGenre && matchesModel;
   });
 }
@@ -127,10 +406,13 @@ function updatePagination() {
     document.querySelector('#genre-filter')?.value || 'all',
     document.querySelector('#model-filter')?.value || 'all'
   );
-  
-  const totalPages = Math.ceil(filteredSongs.length / songsPerPage);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSongs.length / songsPerPage));
+  if (currentPage > totalPages) {
+    currentPage = totalPages;
+  }
   const paginationContainer = document.querySelector('.pagination');
-  
+
   if (paginationContainer) {
     paginationContainer.innerHTML = `
       <button onclick="changePage('prev')" ${currentPage === 1 ? 'disabled' : ''}>
@@ -166,20 +448,27 @@ function generateMusicCards() {
 
   // Precarga de la imagen por defecto
   const defaultImage = new Image();
-  defaultImage.src = 'assets/default-cover.png';
-  
-  displayedSongs.forEach((song, index) => {
+  defaultImage.src = DEFAULT_COVER;
+
+  displayedSongs.forEach((song) => {
     // Encontrar el índice real en el array completo de canciones
     const realIndex = songs.findIndex(s => s.id === song.id);
+    const fallbackIndex = songs.indexOf(song);
+    const songIndex = realIndex !== -1 ? realIndex : Math.max(fallbackIndex, 0);
+    const songDate = song.date || 'Fecha desconocida';
+    const songModel = song.aiModel || 'Modelo desconocido';
+    const songGenre = song.genre || 'Sin género';
+    const songSize = typeof song.size === 'number' ? `<span class="song-size">💾 ${formatFileSize(song.size)}</span>` : '';
+    const downloadName = song.downloadName || song.title || 'cancion.mp3';
     const card = document.createElement('div');
     card.className = 'music-card';
     card.innerHTML = `
-      <div class="card-image" onclick="playSongAtIndex(${realIndex})">
-        <img 
-          src="${song.cover || 'assets/default-cover.png'}" 
-          alt="${song.title}" 
+      <div class="card-image" onclick="playSongAtIndex(${songIndex})">
+        <img
+          src="${song.cover || DEFAULT_COVER}"
+          alt="${song.title}"
           loading="lazy"
-          onerror="this.onerror=null; this.src='assets/default-cover.png'; this.classList.add('default-cover')">
+          onerror="this.onerror=null; this.src='${DEFAULT_COVER}'; this.classList.add('default-cover')">
         <div class="play-overlay">
           <span class="play-icon">▶</span>
         </div>
@@ -187,15 +476,16 @@ function generateMusicCards() {
       <div class="card-content">
         <h3>${song.title}</h3>
         <div class="song-meta">
-          <span class="song-date">📅 ${song.date}</span>
-          <span class="song-model">🤖 ${song.aiModel}</span>
-          <span class="song-genre">🎵 ${song.genre}</span>
+          <span class="song-date">📅 ${songDate}</span>
+          <span class="song-model">🤖 ${songModel}</span>
+          <span class="song-genre">🎵 ${songGenre}</span>
+          ${songSize}
         </div>
         <div class="card-actions">
-          <a href="${song.file}" download class="download-button" onclick="event.stopPropagation()">
+          <a href="${song.file}" download="${downloadName}" class="download-button" onclick="event.stopPropagation()">
             <span class="download-icon">⬇️</span> Descargar
           </a>
-          <button class="play-button" onclick="playSongAtIndex(${realIndex})">
+          <button class="play-button" onclick="playSongAtIndex(${songIndex})">
             <span>▶️</span> Reproducir
           </button>
         </div>
@@ -203,6 +493,36 @@ function generateMusicCards() {
     `;
     musicGrid.appendChild(card);
   });
+}
+
+function refreshInterface({ resetPage = false } = {}) {
+  if (resetPage) {
+    currentPage = 1;
+  }
+
+  updateFilters();
+  generateMusicCards();
+  initializePlaylist();
+
+  if (!songs.length) {
+    if (playlist) {
+      playlist.innerHTML = '<div class="playlist-empty">No hay canciones cargadas todavía</div>';
+    }
+    if (currentSongElement) {
+      currentSongElement.textContent = 'Selecciona una canción';
+    }
+    if (music) {
+      music.pause();
+      music.removeAttribute('src');
+    }
+    return;
+  }
+
+  if (currentSongIndex >= songs.length) {
+    currentSongIndex = 0;
+  }
+
+  loadCurrentSong();
 }
 
 // Función para cambiar de página
@@ -215,7 +535,7 @@ function changePage(direction) {
       document.querySelector('#genre-filter')?.value || 'all',
       document.querySelector('#model-filter')?.value || 'all'
     );
-    const totalPages = Math.ceil(filteredSongs.length / songsPerPage);
+    const totalPages = Math.max(1, Math.ceil(filteredSongs.length / songsPerPage));
     if (currentPage < totalPages) {
       currentPage++;
     }
@@ -225,8 +545,15 @@ function changePage(direction) {
 
 // Funciones del reproductor
 function initializePlaylist() {
+  if (!playlist) return;
+
+  if (!songs.length) {
+    playlist.innerHTML = '<div class="playlist-empty">No hay canciones cargadas todavía</div>';
+    return;
+  }
+
   playlist.innerHTML = songs.map((song, index) => `
-    <div class="playlist-item ${index === currentSongIndex ? 'active' : ''}" 
+    <div class="playlist-item ${index === currentSongIndex ? 'active' : ''}"
          onclick="playSongAtIndex(${index})">
       ${song.title}
     </div>
@@ -240,9 +567,23 @@ function updatePlaylistSelection() {
 }
 
 function loadCurrentSong() {
+  if (!music) return;
+
   const song = songs[currentSongIndex];
+  if (!song) {
+    music.pause();
+    music.removeAttribute('src');
+    if (currentSongElement) {
+      currentSongElement.textContent = 'Selecciona una canción';
+    }
+    updatePlaylistSelection();
+    return;
+  }
+
   music.src = song.file;
-  currentSongElement.textContent = song.title;
+  if (currentSongElement) {
+    currentSongElement.textContent = song.title;
+  }
   if (isPlaying) {
     music.play();
   }
@@ -309,6 +650,8 @@ function fadeIn(targetVolume = 1) {
 let lastKnownVolume = 1; // Variable global para mantener el último volumen conocido
 
 function toggleMusic() {
+  if (!music) return;
+
   if (!music.src) {
     console.warn('No hay una canción seleccionada');
     return;
@@ -348,6 +691,7 @@ function toggleMusic() {
 }
 
 function nextSong() {
+  if (!songs.length) return;
   currentSongIndex = (currentSongIndex + 1) % songs.length;
   loadCurrentSong();
   if (isPlaying) {
@@ -359,6 +703,7 @@ function nextSong() {
 }
 
 function previousSong() {
+  if (!songs.length) return;
   currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
   loadCurrentSong();
   if (isPlaying) {
@@ -370,6 +715,11 @@ function previousSong() {
 }
 
 function playSongAtIndex(index) {
+  if (!songs.length) return;
+  if (index < 0 || index >= songs.length) {
+    console.warn('Índice de canción inválido:', index);
+    return;
+  }
   currentSongIndex = index;
   loadCurrentSong();
   if (!isPlaying) {
@@ -377,9 +727,74 @@ function playSongAtIndex(index) {
   }
 }
 
+function setupUploadForm() {
+  const uploadForm = document.getElementById('uploadForm');
+  if (!uploadForm) return;
+
+  const fileInput = document.getElementById('songFile');
+  const titleInput = document.getElementById('songTitle');
+  const genreInput = document.getElementById('songGenre');
+  const modelInput = document.getElementById('songModel');
+  const coverInput = document.getElementById('coverFile');
+
+  fileInput?.addEventListener('change', () => {
+    if (fileInput.files?.length) {
+      const [file] = fileInput.files;
+      if (file && titleInput && !titleInput.value.trim()) {
+        titleInput.value = formatTitleFromFileName(file.name);
+      }
+    }
+  });
+
+  uploadForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      showUploadStatus('Selecciona un archivo de audio para continuar.', 'error');
+      return;
+    }
+
+    showUploadStatus('Procesando canción...');
+
+    try {
+      const coverFile = coverInput?.files?.[0];
+      const coverUrl = coverFile ? await fileToDataURL(coverFile) : DEFAULT_COVER;
+      const title = titleInput?.value.trim() || formatTitleFromFileName(file.name) || file.name;
+      const genre = genreInput?.value.trim() || 'Sin género';
+      const aiModel = modelInput?.value.trim() || 'Personal';
+
+      const newSong = {
+        id: `local-${Date.now()}`,
+        title,
+        file: URL.createObjectURL(file),
+        cover: coverUrl,
+        date: new Date().toISOString().slice(0, 10),
+        size: file.size,
+        genre,
+        aiModel,
+        isLocal: true,
+        downloadName: file.name
+      };
+
+      songs.unshift(newSong);
+      currentSongIndex = 0;
+      refreshInterface({ resetPage: true });
+
+      showUploadStatus('Canción subida correctamente. ¡A disfrutar!', 'success');
+      uploadForm.reset();
+    } catch (error) {
+      console.error('Error al cargar la canción local:', error);
+      showUploadStatus('No se pudo cargar la canción. Intenta nuevamente.', 'error');
+    }
+  });
+}
+
 // Inicializar la interfaz cuando el documento esté listo
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Documento cargado, iniciando carga de canciones...');
   initializePlayerElements();
+  initializeDiscordGate();
+  setupUploadForm();
   loadSongs();
 });
