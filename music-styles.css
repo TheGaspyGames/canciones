@@ -141,6 +141,13 @@ body {
   margin-top: 10px;
 }
 
+.playlist-empty {
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 12px 0;
+}
+
 .playlist-item {
   color: white;
   padding: 8px;
@@ -197,6 +204,108 @@ select {
   color: var(--text);
   cursor: pointer;
   font-size: 14px;
+}
+
+.upload-section {
+  margin-bottom: 3rem;
+  padding: 2.4rem;
+  border-radius: 1.6rem;
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.85), rgba(17, 24, 39, 0.9));
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+  backdrop-filter: blur(8px);
+}
+
+.upload-section h2 {
+  margin-top: 0;
+  font-size: 2rem;
+  color: #f8fafc;
+}
+
+.upload-section .description {
+  margin-bottom: 1.6rem;
+  color: #a5b4fc;
+}
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.form-row label {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.form-row input[type="file"],
+.form-row input[type="text"] {
+  width: 100%;
+  padding: 0.9rem 1.2rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background-color: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-row input[type="file"]:focus,
+.form-row input[type="text"]:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+  outline: none;
+}
+
+.form-row.two-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1.6rem;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.upload-button {
+  padding: 0.9rem 1.8rem;
+  border: none;
+  border-radius: 0.8rem;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.upload-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(99, 102, 241, 0.25);
+}
+
+.upload-button:active {
+  transform: translateY(1px);
+}
+
+.upload-status {
+  min-height: 1.2rem;
+  font-size: 0.9rem;
+  color: #cbd5f5;
+}
+
+.upload-status.error {
+  color: #fca5a5;
+}
+
+.upload-status.success {
+  color: #86efac;
 }
 
 /* Paginación */
