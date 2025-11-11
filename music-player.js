@@ -7,8 +7,6 @@ const DISCORD_STORAGE_KEY = 'discordAccessToken';
 const DISCORD_REDIRECT_URI =
   window.DISCORD_REDIRECT_URI || `${window.location.origin}${window.location.pathname}`;
 const DISCORD_AUTH_BASE = 'https://discord.com/oauth2/authorize';
-const DISCORD_TOKEN_ENDPOINT = 'https://discord.com/api/oauth2/token';
-const DISCORD_CODE_VERIFIER_KEY = 'discordCodeVerifier';
 
 const GITHUB_OWNER = window.GITHUB_OWNER || 'thegaspygames';
 const GITHUB_REPO = window.GITHUB_REPO || 'canciones';
@@ -29,6 +27,19 @@ const songsPerPage = 24;
 let currentSongIndex = 0;
 let isPlaying = false;
 let fadeInterval = null;
+
+// Mitigar errores de extensiones externas que esperan `chrome.runtime.sendMessage`
+if (typeof window !== 'undefined') {
+  if (!window.chrome) {
+    window.chrome = {};
+  }
+  if (!window.chrome.runtime) {
+    window.chrome.runtime = {};
+  }
+  if (typeof window.chrome.runtime.sendMessage !== 'function') {
+    window.chrome.runtime.sendMessage = () => {};
+  }
+}
 let music, musicButton, currentSongElement, progressBar, progressContainer, playlist;
 
 // Función para formatear el tamaño del archivo
@@ -104,50 +115,14 @@ function decodeBase64ToString(base64Value) {
   return decodeURIComponent(escape(binary));
 }
 
-function base64UrlEncodeFromUint8(bytes) {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 1) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function generateCodeVerifier(length = 64) {
-  const array = new Uint8Array(length);
-  if (window.crypto && window.crypto.getRandomValues) {
-    window.crypto.getRandomValues(array);
-  } else {
-    for (let i = 0; i < array.length; i += 1) {
-      array[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return base64UrlEncodeFromUint8(array);
-}
-
-async function createCodeChallenge(verifier) {
-  if (window.crypto?.subtle && typeof TextEncoder !== 'undefined') {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const digest = await window.crypto.subtle.digest('SHA-256', data);
-    return base64UrlEncodeFromUint8(new Uint8Array(digest));
-  }
-  throw new Error('Tu navegador no soporta la autenticación segura de Discord (PKCE).');
-}
-
-async function beginDiscordLogin() {
+function beginDiscordLogin() {
   try {
-    const verifier = generateCodeVerifier();
-    const challenge = await createCodeChallenge(verifier);
-    sessionStorage.setItem(DISCORD_CODE_VERIFIER_KEY, verifier);
-
     const params = new URLSearchParams({
-      response_type: 'code',
+      response_type: 'token',
       client_id: DISCORD_CLIENT_ID,
       scope: DISCORD_SCOPE,
       redirect_uri: DISCORD_REDIRECT_URI,
-      prompt: 'consent',
-      code_challenge: challenge,
-      code_challenge_method: 'S256'
+      prompt: 'consent'
     });
 
     window.location.href = `${DISCORD_AUTH_BASE}?${params.toString()}`;
@@ -266,20 +241,49 @@ async function fetchMetadataIndexSongs() {
     return [];
   }
 
-  const indexUrl = buildRawGitHubUrl(GITHUB_METADATA_INDEX_PATH);
-  const response = await fetch(`${indexUrl}?cacheBust=${Date.now()}`);
+  const candidates = [];
 
-  if (!response.ok) {
-    throw new Error(
-      `GitHub respondió ${response.status} al leer ${GITHUB_METADATA_INDEX_PATH}`
-    );
+  try {
+    const localUrl = new URL(GITHUB_METADATA_INDEX_PATH, window.location.href);
+    localUrl.searchParams.set('cacheBust', Date.now().toString());
+    candidates.push(localUrl.toString());
+  } catch (error) {
+    console.warn('No se pudo construir la URL local del índice de metadata.', error);
   }
 
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw new Error('El índice de metadata no contiene un JSON válido.');
+  if (GITHUB_OWNER && GITHUB_REPO && GITHUB_BRANCH) {
+    try {
+      const remoteUrl = new URL(buildRawGitHubUrl(GITHUB_METADATA_INDEX_PATH));
+      remoteUrl.searchParams.set('cacheBust', Date.now().toString());
+      candidates.push(remoteUrl.toString());
+    } catch (error) {
+      console.warn('No se pudo construir la URL remota del índice de metadata.', error);
+    }
+  }
+
+  let payload = null;
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      payload = await response.json();
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!payload) {
+    if (lastError) {
+      throw new Error(
+        `No se pudo leer el índice de metadata (${lastError.message || lastError}).`
+      );
+    }
+    throw new Error('No se pudo leer el índice de metadata.');
   }
 
   const songsFromIndex = Array.isArray(payload?.songs)
@@ -570,45 +574,6 @@ function readStoredDiscordToken() {
 
 function clearDiscordToken() {
   sessionStorage.removeItem(DISCORD_STORAGE_KEY);
-  sessionStorage.removeItem(DISCORD_CODE_VERIFIER_KEY);
-}
-
-async function exchangeCodeForToken(code) {
-  const verifier = sessionStorage.getItem(DISCORD_CODE_VERIFIER_KEY);
-  if (!verifier) {
-    throw new Error('No se encontró el verificador PKCE. Inicia sesión nuevamente.');
-  }
-
-  sessionStorage.removeItem(DISCORD_CODE_VERIFIER_KEY);
-
-  const body = new URLSearchParams({
-    client_id: DISCORD_CLIENT_ID,
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: DISCORD_REDIRECT_URI,
-    code_verifier: verifier
-  });
-
-  const response = await fetch(DISCORD_TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: body.toString()
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Discord rechazó el intercambio de código (${response.status}): ${errorText}`);
-  }
-
-  const data = await response.json();
-  if (!data.access_token) {
-    throw new Error('Discord no devolvió un token de acceso válido.');
-  }
-
-  storeDiscordToken(data.access_token, data.expires_in, data.refresh_token);
-  return data.access_token;
 }
 
 function cleanDiscordOAuthParams() {
@@ -616,22 +581,45 @@ function cleanDiscordOAuthParams() {
   ['code', 'state', 'error', 'error_description'].forEach((param) => {
     url.searchParams.delete(param);
   });
+
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+  [
+    'access_token',
+    'token_type',
+    'expires_in',
+    'scope',
+    'state',
+    'error',
+    'error_description'
+  ].forEach((param) => {
+    hashParams.delete(param);
+  });
+
   const newSearch = url.searchParams.toString();
-  const newUrl = `${url.pathname}${newSearch ? `?${newSearch}` : ''}${url.hash}`;
+  const newHash = hashParams.toString();
+  const newUrl = `${url.pathname}${newSearch ? `?${newSearch}` : ''}${newHash ? `#${newHash}` : ''}`;
+
   if (history.replaceState) {
     history.replaceState(null, document.title, newUrl);
   } else {
-    window.location.search = newSearch ? `?${newSearch}` : '';
+    if (newSearch !== window.location.search.replace(/^[?]/, '')) {
+      window.location.search = newSearch ? `?${newSearch}` : '';
+    }
+    if (newHash !== window.location.hash.replace(/^#/, '')) {
+      window.location.hash = newHash ? `#${newHash}` : '';
+    }
   }
 }
 
 async function handleDiscordRedirect() {
   const url = new URL(window.location.href);
-  const error = url.searchParams.get('error');
-  const errorDescription = url.searchParams.get('error_description');
-  const code = url.searchParams.get('code');
+  const hash = url.hash.replace(/^#/, '');
+  const hashParams = new URLSearchParams(hash);
 
-  if (!error && !code) {
+  const error = url.searchParams.get('error') || hashParams.get('error');
+  const errorDescription = url.searchParams.get('error_description') || hashParams.get('error_description');
+
+  if (!error && !hashParams.has('access_token')) {
     return null;
   }
 
@@ -643,23 +631,16 @@ async function handleDiscordRedirect() {
     return null;
   }
 
-  if (!code) {
+  const accessToken = hashParams.get('access_token');
+  if (!accessToken) {
     cleanDiscordOAuthParams();
     return null;
   }
 
-  try {
-    updateDiscordStatus('Validando la autorización de Discord...');
-    const token = await exchangeCodeForToken(code);
-    cleanDiscordOAuthParams();
-    return token;
-  } catch (error) {
-    console.error('Error al procesar el código de Discord:', error);
-    updateDiscordStatus('No se pudo completar la autenticación con Discord. Intenta nuevamente.', 'error');
-    cleanDiscordOAuthParams();
-    clearDiscordToken();
-    return null;
-  }
+  const expiresIn = Number(hashParams.get('expires_in')) || 3600;
+  storeDiscordToken(accessToken, expiresIn, null);
+  cleanDiscordOAuthParams();
+  return accessToken;
 }
 
 async function fetchDiscordProfile(token) {
