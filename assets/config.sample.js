@@ -10,3 +10,4 @@ window.GITHUB_SONGS_PATH = 'songs.json';
 window.GITHUB_MUSIC_DIR = 'music';
 window.GITHUB_COVER_DIR = 'assets/covers';
 window.GITHUB_METADATA_DIR = 'music-metadata';
+window.GITHUB_METADATA_INDEX_PATH = 'music-metadata/index.json';

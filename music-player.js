@@ -243,14 +243,6 @@ async function fetchMetadataIndexSongs() {
 
   const candidates = [];
 
-  try {
-    const localUrl = new URL(GITHUB_METADATA_INDEX_PATH, window.location.href);
-    localUrl.searchParams.set('cacheBust', Date.now().toString());
-    candidates.push(localUrl.toString());
-  } catch (error) {
-    console.warn('No se pudo construir la URL local del índice de metadata.', error);
-  }
-
   if (GITHUB_OWNER && GITHUB_REPO && GITHUB_BRANCH) {
     try {
       const remoteUrl = new URL(buildRawGitHubUrl(GITHUB_METADATA_INDEX_PATH));
@@ -259,6 +251,16 @@ async function fetchMetadataIndexSongs() {
     } catch (error) {
       console.warn('No se pudo construir la URL remota del índice de metadata.', error);
     }
+  }
+
+  try {
+    const localUrl = new URL(GITHUB_METADATA_INDEX_PATH, window.location.href);
+    localUrl.searchParams.set('cacheBust', Date.now().toString());
+    if (!candidates.includes(localUrl.toString())) {
+      candidates.push(localUrl.toString());
+    }
+  } catch (error) {
+    console.warn('No se pudo construir la URL local del índice de metadata.', error);
   }
 
   let payload = null;
@@ -329,7 +331,11 @@ async function fetchMetadataSongsFromDirectory() {
 
         try {
           const data = await response.json();
-          return normalizeMetadataSong(data);
+          const normalized = normalizeMetadataSong(data);
+          if (normalized && !normalized.metadataPath) {
+            normalized.metadataPath = `${GITHUB_METADATA_DIR}/${entry.name}`;
+          }
+          return normalized;
         } catch (error) {
           console.warn(`No se pudo parsear metadata ${entry.name}:`, error);
           return null;
@@ -1248,18 +1254,21 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
   };
 
   const metadataRepoPath = `${GITHUB_METADATA_DIR}/${baseFileName}.json`;
+  const metadataEntry = { ...newSongEntry, metadataPath: metadataRepoPath };
   const metadataMessage = commitMessage
     ? `${commitMessage} (metadata)`
     : `Añadir metadata para ${sanitizedTitle}`;
 
+  const metadataContent = `${JSON.stringify(metadataEntry, null, 2)}\n`;
+
   await putGitHubFile(
     metadataRepoPath,
-    encodeStringToBase64(`${JSON.stringify(newSongEntry, null, 2)}\n`),
+    encodeStringToBase64(metadataContent),
     token,
     metadataMessage
   );
 
-  await updateMetadataIndexFile(newSongEntry, token, commitMessage);
+  await updateMetadataIndexFile(metadataEntry, token, commitMessage);
 
   try {
     const songsData = await fetchGitHubJson(GITHUB_SONGS_PATH, token);
@@ -1268,7 +1277,7 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
     }
 
     songsData.json.songs = songsData.json.songs.filter((song) => song.file !== audioRepoPath);
-    songsData.json.songs.unshift(newSongEntry);
+    songsData.json.songs.unshift(metadataEntry);
     const updatedContent = `${JSON.stringify(songsData.json, null, 2)}\n`;
     const songsMessage = commitMessage
       ? `${commitMessage} (actualizar songs.json)`
@@ -1286,9 +1295,9 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
   }
 
   return {
-    repoSong: newSongEntry,
+    repoSong: metadataEntry,
     clientSong: {
-      ...newSongEntry,
+      ...metadataEntry,
       file: resolveRepoAsset(audioRepoPath, ''),
       cover: resolveRepoAsset(coverRepoPath, DEFAULT_COVER)
     }
