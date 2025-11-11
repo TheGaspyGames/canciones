@@ -1,6 +1,39 @@
 {
   "songs": [
     {
+      "id": "e903087e-519c-43ac-b0c7-52b927eb118f",
+      "title": "Soy tu administrador",
+      "file": "music/soy-tu-administrador-1762728305317.mp3",
+      "cover": "assets/default-cover.png",
+      "date": "2025-11-09",
+      "size": 4770779,
+      "genre": "Rock Metalcore moderno con influencias de trap industrial. Guitarras distorsionadas, bajo profundo, batería agresiva con doble bombo, voces gritadas y coros melódicos. Energía de traición, humor sarcástico y revancha.",
+      "aiModel": "Suno v4.5-ALL",
+      "downloadName": "soy-tu-administrador-1762728305317.mp3"
+    },
+    {
+      "id": "9103865e-2a99-480d-a595-4f92eaeb4cd4",
+      "title": "La mierda de Kasuitz y los trials (1)",
+      "file": "music/la-mierda-de-kasuitz-y-los-trials-1-1762721658817.mp3",
+      "cover": "assets/default-cover.png",
+      "date": "2025-11-09",
+      "size": 8769099,
+      "genre": "Trap Metal / Rap-Rock oscuro, agresivo y cinematográfico. Distorsión pesada, bajo 808 profundo, guitarras eléctricas con delay corto, percusión híbrida (808 + batería real), sintetizadores industriales con build-ups progresivos y coros “gang” en clímax.",
+      "aiModel": "Suno v4.5-ALL",
+      "downloadName": "la-mierda-de-kasuitz-y-los-trials-1-1762721658817.mp3"
+    },
+    {
+      "id": "836495c5-ddd0-46ec-b493-167fdcb09f77",
+      "title": "La mierda de Kasuitz y los trials",
+      "file": "music/la-mierda-de-kasuitz-y-los-trials-1762720667336.mp3",
+      "cover": "assets/default-cover.png",
+      "date": "2025-11-09",
+      "size": 10133343,
+      "genre": "Trap Metal / Rap-Rock oscuro, agresivo y cinematográfico. Distorsión pesada, bajo 808 profundo, guitarras eléctricas con delay corto, percusión híbrida (808 + batería real), sintetizadores industriales con build-ups progresivos y coros “gang” en clímax.",
+      "aiModel": "Suno v4.5-ALL",
+      "downloadName": "la-mierda-de-kasuitz-y-los-trials-1762720667336.mp3"
+    },
+    {
       "id": "a64b581f",
       "title": "(sonido eléctrico, truenos, distorsión) (1)",
       "file": "music/(sonido eléctrico, truenos, distorsión) (1).mp3",
