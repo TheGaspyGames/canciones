@@ -11,7 +11,6 @@ const DISCORD_AUTH_BASE = 'https://discord.com/oauth2/authorize';
 const GITHUB_OWNER = window.GITHUB_OWNER || 'thegaspygames';
 const GITHUB_REPO = window.GITHUB_REPO || 'canciones';
 const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
-const GITHUB_SONGS_PATH = window.GITHUB_SONGS_PATH || 'songs.json';
 const GITHUB_MUSIC_DIR = window.GITHUB_MUSIC_DIR || 'music';
 const GITHUB_COVER_DIR = window.GITHUB_COVER_DIR || 'assets/covers';
 const GITHUB_METADATA_DIR = window.GITHUB_METADATA_DIR || 'music-metadata';
@@ -153,7 +152,6 @@ function isGitHubConfigured() {
     !GITHUB_OWNER ||
     !GITHUB_REPO ||
     !GITHUB_BRANCH ||
-    !GITHUB_SONGS_PATH ||
     !GITHUB_MUSIC_DIR ||
     !GITHUB_COVER_DIR ||
     !GITHUB_METADATA_DIR
@@ -1269,30 +1267,6 @@ async function uploadSongToGitHub({ file, coverFile, title, genre, aiModel, toke
   );
 
   await updateMetadataIndexFile(metadataEntry, token, commitMessage);
-
-  try {
-    const songsData = await fetchGitHubJson(GITHUB_SONGS_PATH, token);
-    if (!Array.isArray(songsData.json.songs)) {
-      songsData.json.songs = [];
-    }
-
-    songsData.json.songs = songsData.json.songs.filter((song) => song.file !== audioRepoPath);
-    songsData.json.songs.unshift(metadataEntry);
-    const updatedContent = `${JSON.stringify(songsData.json, null, 2)}\n`;
-    const songsMessage = commitMessage
-      ? `${commitMessage} (actualizar songs.json)`
-      : `Actualizar songs.json con ${sanitizedTitle}`;
-
-    await putGitHubFile(
-      GITHUB_SONGS_PATH,
-      encodeStringToBase64(updatedContent),
-      token,
-      songsMessage,
-      songsData.sha
-    );
-  } catch (error) {
-    console.warn('No se pudo actualizar songs.json. La metadata individual seguirá disponible.', error);
-  }
 
   return {
     repoSong: metadataEntry,
